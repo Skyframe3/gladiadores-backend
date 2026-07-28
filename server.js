@@ -50,34 +50,36 @@ app.use('/api/reservas', (req, res, next) => {
 
 app.use(express.json({ limit: '100kb' }));
 
-// Conexión a MongoDB
-let mongoConnectPromise;
-if (mongoose.connection.readyState === 0) {
-  mongoConnectPromise = mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 15000,
-    socketTimeoutMS: 15000
-  });
-  mongoConnectPromise
-    .then(() => console.log('✅ MongoDB conectado en startup'))
-    .catch(err => console.error('❌ Error MongoDB startup:', err.message));
-}
+// Conexión a MongoDB (sin bloquear el startup)
+mongoose.connect(process.env.MONGODB_URI, {
+  serverSelectionTimeoutMS: 30000,  // Espera más tiempo en Vercel
+  socketTimeoutMS: 30000
+})
+.then(() => console.log('✅ MongoDB conectado'))
+.catch(err => console.error('⚠️  MongoDB error:', err.message));
 
-// Middleware que asegura conexión antes de proceder (excepto health)
+// Middleware que intenta conectar si está desconectado
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health') return next();
+  if (req.path === '/api/health' || req.path === '/api/debug-mongo') return next();
 
-  try {
-    if (mongoose.connection.readyState === 0 && mongoConnectPromise) {
-      await mongoConnectPromise;
+  // Si estamos desconectados, intenta conectar una sola vez
+  if (mongoose.connection.readyState === 0) {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 20000,
+        socketTimeoutMS: 20000
+      });
+    } catch (e) {
+      return res.status(503).json({ error: 'Conectando a la base de datos, intenta de nuevo' });
     }
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Base de datos no disponible' });
-    }
-    next();
-  } catch (e) {
-    console.error('MongoDB middleware error:', e.message);
-    res.status(503).json({ error: 'Base de datos no disponible' });
   }
+
+  // Si aún no está conectado, no procede
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ error: 'Base de datos no disponible' });
+  }
+
+  next();
 });
 
 // Rutas API
