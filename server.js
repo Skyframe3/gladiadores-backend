@@ -63,14 +63,16 @@ mongoose.connect(process.env.MONGODB_URI, {
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || req.path === '/api/debug-mongo') return next();
 
-  // Si estamos desconectados, intenta conectar una sola vez
+  // Si estamos desconectados, intenta conectar una sola vez (con timeout largo para Vercel)
   if (mongoose.connection.readyState === 0) {
     try {
       await mongoose.connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 20000,
-        socketTimeoutMS: 20000
+        serverSelectionTimeoutMS: 45000,  // MongoDB en Vercel puede tardar 30-45s
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 30000
       });
     } catch (e) {
+      console.error('Timeout connecting to MongoDB:', e.message);
       return res.status(503).json({ error: 'Conectando a la base de datos, intenta de nuevo' });
     }
   }
