@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
 import reservasRouter from './routes/reservas.js';
+import authRouter from './routes/auth.js';
 
 dotenv.config();
 
@@ -57,6 +58,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/reservas', reservasRouter);
 
 // 404
