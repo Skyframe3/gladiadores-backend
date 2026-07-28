@@ -50,17 +50,26 @@ app.use('/api/reservas', (req, res, next) => {
 
 app.use(express.json({ limit: '100kb' }));
 
-// Conexion a MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB conectado'))
-  .catch(err => console.error('Error MongoDB:', err));
+// Conexión a MongoDB — reutiliza la conexión en entornos serverless
+let mongoReady = false;
+async function connectDB() {
+  if (mongoReady || mongoose.connection.readyState === 1) return;
+  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
+  mongoReady = true;
+  console.log('MongoDB conectado');
+}
+connectDB().catch(err => console.error('Error MongoDB:', err));
+
+// Middleware que espera la conexión antes de llegar a las rutas
+app.use(async (req, res, next) => {
+  if (req.path === '/api/health') return next();
+  try { await connectDB(); next(); }
+  catch (e) { res.status(503).json({ error: 'Base de datos no disponible' }); }
+});
 
 // Rutas API
 app.get('/api/health', async (req, res) => {
-  const mongoose = (await import('mongoose')).default;
-  const dbState = mongoose.connection.readyState;
-  // 0=disconnected 1=connected 2=connecting 3=disconnecting
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 3, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 4, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState: mongoose.connection.readyState });
 });
 
 app.use('/api/auth', authRouter);
