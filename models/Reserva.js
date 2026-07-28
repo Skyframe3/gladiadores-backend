@@ -23,7 +23,7 @@ const reservaSchema = new mongoose.Schema({
   // Pago
   monto: { type: Number, required: true },
   modoPago: { type: String, enum: ['anticipo', 'completo'], default: 'anticipo' },
-  metodoPago: { type: String, enum: ['mercadopago', 'paypal'], default: 'mercadopago' },
+  metodoPago: { type: String, enum: ['mercadopago'], default: 'mercadopago' },
   estadoPago: { type: String, enum: ['pendiente', 'pagado', 'reembolsado'], default: 'pendiente' },
 
   // Estado de la reserva

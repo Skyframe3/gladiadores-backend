@@ -37,8 +37,7 @@ router.post('/', validateReserva, async (req, res) => {
     res.status(201).json({
       ok: true,
       folio: reserva.folio,
-      mensaje: `Reserva ${folio} creada exitosamente`,
-      reserva
+      mensaje: `Reserva ${folio} creada exitosamente`
     });
   } catch (err) {
     console.error('Error al crear reserva:', err);
@@ -49,7 +48,7 @@ router.post('/', validateReserva, async (req, res) => {
 // GET /api/reservas — Listar todas las reservas (admin solamente)
 router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const reservas = await Reserva.find().sort({ creadaEn: -1 }).select('-cliente.email -cliente.whatsapp');
+    const reservas = await Reserva.find().sort({ creadaEn: -1 });
     res.json({ ok: true, total: reservas.length, reservas });
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener reservas' });

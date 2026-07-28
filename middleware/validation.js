@@ -56,9 +56,9 @@ export const validateReserva = (req, res, next) => {
     return res.status(400).json({ error: 'fecha: debe ser una fecha futura válida' });
   }
 
-  // Validar asientos (array de números, mínimo 1)
-  if (!Array.isArray(asientos) || asientos.length === 0 || !asientos.every(n => Number.isInteger(n) && n > 0)) {
-    return res.status(400).json({ error: 'asientos: debe ser array de números positivos' });
+  // Validar asientos (array de números, mínimo 1, máximo 20)
+  if (!Array.isArray(asientos) || asientos.length === 0 || asientos.length > 20 || !asientos.every(n => Number.isInteger(n) && n > 0 && n <= 100)) {
+    return res.status(400).json({ error: 'asientos: debe ser array de 1-20 números positivos' });
   }
 
   // Validar monto (número positivo, máximo razonable $50,000)

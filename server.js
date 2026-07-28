@@ -48,7 +48,7 @@ app.use('/api/reservas', (req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100kb' }));
 
 // Conexion a MongoDB
 mongoose.connect(process.env.MONGODB_URI)
