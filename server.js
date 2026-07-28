@@ -93,14 +93,36 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/debug-mongo', async (req, res) => {
   try {
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI);
+    const state = mongoose.connection.readyState;
+    // 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
+    const stateLabel = ['disconnected', 'connected', 'connecting', 'disconnecting'][state];
+
+    if (state === 0) {
+      console.log('Attempting to connect...');
+      await mongoose.connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 10000
+      });
     }
+
     const admin = await mongoose.connection.db.admin();
-    const status = await admin.ping();
-    res.json({ ok: true, status, readyState: mongoose.connection.readyState });
+    const ping = await admin.ping();
+    const collections = await mongoose.connection.db.listCollections().toArray();
+
+    res.json({
+      ok: true,
+      readyState: mongoose.connection.readyState,
+      readyStateLabel: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
+      ping: !!ping,
+      collections: collections.map(c => c.name),
+      uri: process.env.MONGODB_URI ? '✅ configurada' : '❌ no configurada'
+    });
   } catch (e) {
-    res.status(500).json({ error: e.message, readyState: mongoose.connection.readyState });
+    res.status(500).json({
+      error: e.message,
+      readyState: mongoose.connection.readyState,
+      readyStateLabel: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
+      uri: process.env.MONGODB_URI ? '✅ configurada' : '❌ no configurada'
+    });
   }
 });
 
