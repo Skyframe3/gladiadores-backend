@@ -82,7 +82,20 @@ app.use(async (req, res, next) => {
 
 // Rutas API
 app.get('/api/health', async (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 4, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState: mongoose.connection.readyState });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 5, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState: mongoose.connection.readyState });
+});
+
+app.get('/api/debug-mongo', async (req, res) => {
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(process.env.MONGODB_URI);
+    }
+    const admin = await mongoose.connection.db.admin();
+    const status = await admin.ping();
+    res.json({ ok: true, status, readyState: mongoose.connection.readyState });
+  } catch (e) {
+    res.status(500).json({ error: e.message, readyState: mongoose.connection.readyState });
+  }
 });
 
 app.use('/api/auth', authRouter);
