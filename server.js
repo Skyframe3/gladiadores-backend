@@ -56,8 +56,11 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('Error MongoDB:', err));
 
 // Rutas API
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 2, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI });
+app.get('/api/health', async (req, res) => {
+  const mongoose = (await import('mongoose')).default;
+  const dbState = mongoose.connection.readyState;
+  // 0=disconnected 1=connected 2=connecting 3=disconnecting
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 3, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState });
 });
 
 app.use('/api/auth', authRouter);
