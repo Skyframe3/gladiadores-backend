@@ -50,21 +50,34 @@ app.use('/api/reservas', (req, res, next) => {
 
 app.use(express.json({ limit: '100kb' }));
 
-// Conexión a MongoDB — reutiliza la conexión en entornos serverless
-let mongoReady = false;
-async function connectDB() {
-  if (mongoReady || mongoose.connection.readyState === 1) return;
-  await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
-  mongoReady = true;
-  console.log('MongoDB conectado');
+// Conexión a MongoDB
+let mongoConnectPromise;
+if (mongoose.connection.readyState === 0) {
+  mongoConnectPromise = mongoose.connect(process.env.MONGODB_URI, {
+    serverSelectionTimeoutMS: 15000,
+    socketTimeoutMS: 15000
+  });
+  mongoConnectPromise
+    .then(() => console.log('✅ MongoDB conectado en startup'))
+    .catch(err => console.error('❌ Error MongoDB startup:', err.message));
 }
-connectDB().catch(err => console.error('Error MongoDB:', err));
 
-// Middleware que espera la conexión antes de llegar a las rutas
+// Middleware que asegura conexión antes de proceder (excepto health)
 app.use(async (req, res, next) => {
   if (req.path === '/api/health') return next();
-  try { await connectDB(); next(); }
-  catch (e) { res.status(503).json({ error: 'Base de datos no disponible' }); }
+
+  try {
+    if (mongoose.connection.readyState === 0 && mongoConnectPromise) {
+      await mongoConnectPromise;
+    }
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Base de datos no disponible' });
+    }
+    next();
+  } catch (e) {
+    console.error('MongoDB middleware error:', e.message);
+    res.status(503).json({ error: 'Base de datos no disponible' });
+  }
 });
 
 // Rutas API
