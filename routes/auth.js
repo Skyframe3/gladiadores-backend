@@ -27,14 +27,15 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Actualizar último acceso
-    admin.ultimoAcceso = new Date();
-    await admin.save();
+    // Actualizar último acceso sin disparar pre-save hook
+    await Admin.updateOne({ _id: admin._id }, { $set: { ultimoAcceso: new Date() } });
 
-    // Generar JWT token
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET no configurado en el servidor');
+
     const token = jwt.sign(
       { id: admin._id, email: admin.email, role: admin.rol },
-      process.env.JWT_SECRET,
+      secret,
       { expiresIn: '7d' }
     );
 
