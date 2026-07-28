@@ -25,6 +25,8 @@ const reservaSchema = new mongoose.Schema({
   modoPago: { type: String, enum: ['anticipo', 'completo'], default: 'anticipo' },
   metodoPago: { type: String, enum: ['mercadopago'], default: 'mercadopago' },
   estadoPago: { type: String, enum: ['pendiente', 'pagado', 'reembolsado'], default: 'pendiente' },
+  mpPaymentId: { type: String, index: true }, // ID de transacción en Mercado Pago
+  mpPreferenceId: { type: String }, // ID de preferencia/checkout en Mercado Pago
 
   // Estado de la reserva
   estado: { type: String, enum: ['confirmada', 'cancelada', 'completada', 'no_show'], default: 'confirmada' },
