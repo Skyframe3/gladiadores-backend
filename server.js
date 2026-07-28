@@ -52,33 +52,42 @@ app.use('/api/reservas', (req, res, next) => {
 
 app.use(express.json({ limit: '100kb' }));
 
-// Conexión a MongoDB (sin bloquear el startup)
-mongoose.connect(process.env.MONGODB_URI, {
-  serverSelectionTimeoutMS: 30000,  // Espera más tiempo en Vercel
-  socketTimeoutMS: 30000
-})
-.then(() => console.log('✅ MongoDB conectado'))
-.catch(err => console.error('⚠️  MongoDB error:', err.message));
+// Conexión a MongoDB con connection pooling para Vercel serverless
+// NO bloquea el startup
+const mongoOptions = {
+  serverSelectionTimeoutMS: 60000,
+  socketTimeoutMS: 60000,
+  connectTimeoutMS: 30000,
+  maxPoolSize: 3,  // Vercel serverless = pocas conexiones concurrentes
+  minPoolSize: 1
+};
 
-// Middleware que intenta conectar si está desconectado
+// Intenta conectar en background (non-blocking)
+if (mongoose.connection.readyState === 0) {
+  mongoose.connect(process.env.MONGODB_URI, mongoOptions)
+    .then(() => console.log('✅ MongoDB conectado'))
+    .catch(err => console.error('⚠️  MongoDB error:', err.message));
+}
+
+// Middleware: espera conexión SOLO si está desconectado (máx 60s)
 app.use(async (req, res, next) => {
+  // Health check siempre pasa sin esperar
   if (req.path === '/api/health' || req.path === '/api/debug-mongo') return next();
 
-  // Si estamos desconectados, intenta conectar una sola vez (con timeout largo para Vercel)
+  // Si ya está conectado, procede
+  if (mongoose.connection.readyState === 1) return next();
+
+  // Si está desconectado, intenta conectar UNA VEZ
   if (mongoose.connection.readyState === 0) {
     try {
-      await mongoose.connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 45000,  // MongoDB en Vercel puede tardar 30-45s
-        socketTimeoutMS: 45000,
-        connectTimeoutMS: 30000
-      });
+      await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
     } catch (e) {
-      console.error('Timeout connecting to MongoDB:', e.message);
-      return res.status(503).json({ error: 'Conectando a la base de datos, intenta de nuevo' });
+      console.error('MongoDB connection error:', e.message);
+      return res.status(503).json({ error: 'Base de datos no disponible' });
     }
   }
 
-  // Si aún no está conectado, no procede
+  // Si sigue desconectado/conectando, rechaza
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({ error: 'Base de datos no disponible' });
   }
