@@ -18,8 +18,10 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'https://deploy-gladiadores.vercel.app',
-    'https://gladiadores-offroad.com',
-    'http://localhost:3000'
+    'https://gladiadoresoffroad.com',
+    'https://www.gladiadoresoffroad.com',
+    'http://localhost:3000',
+    'http://localhost:8080'
   ],
   credentials: true
 }));
