@@ -3,6 +3,7 @@ import Counter from '../models/Counter.js';
 import Reserva from '../models/Reserva.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 import { validateReserva, validateEstado } from '../middleware/validation.js';
+import { enviarConfirmacionReserva } from '../services/whatsapp.js';
 
 const router = express.Router();
 
@@ -31,13 +32,13 @@ router.post('/', validateReserva, async (req, res) => {
 
     await reserva.save();
 
-    // TODO Fase 3: Enviar WhatsApp real via Twilio
-    // TODO Fase 5: Crear pago en Mercado Pago
+    // Enviar confirmación por WhatsApp en background (no espera)
+    setImmediate(() => enviarConfirmacionReserva(reserva));
 
     res.status(201).json({
       ok: true,
       folio: reserva.folio,
-      mensaje: `Reserva ${folio} creada exitosamente`
+      mensaje: `Reserva ${folio} creada. Revisa tu WhatsApp para confirmar el pago.`
     });
   } catch (err) {
     console.error('Error al crear reserva:', err);
