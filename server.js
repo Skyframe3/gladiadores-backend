@@ -8,6 +8,7 @@ import reservasRouter from './routes/reservas.js';
 import authRouter from './routes/auth.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
+import catalogoRouter from './routes/catalogo.js';
 
 dotenv.config();
 
@@ -139,6 +140,7 @@ app.get('/api/debug-mongo', async (req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/catalogo', catalogoRouter);
 app.use('/api/reservas', reservasRouter);
 app.use('/api/checkout', checkoutRouter);
 app.use('/api/webhooks', webhooksRouter);
