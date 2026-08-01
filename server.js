@@ -62,46 +62,40 @@ const mongoOptions = {
   minPoolSize: 1
 };
 
-// Intenta conectar en background (non-blocking)
-if (mongoose.connection.readyState === 0) {
-  mongoose.connect(process.env.MONGODB_URI, mongoOptions)
-    .then(() => console.log('✅ MongoDB conectado'))
-    .catch(err => console.error('⚠️  MongoDB error:', err.message));
+// Promesa de conexión cacheada: en serverless cada invocación reutiliza
+// la misma promesa en vez de abrir conexiones nuevas o rechazar mientras conecta.
+let connPromise = null;
+
+function conectarMongo() {
+  // 1 = conectado, nada que esperar
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+
+  if (!connPromise) {
+    connPromise = mongoose.connect(process.env.MONGODB_URI, mongoOptions)
+      .then(() => console.log('✅ MongoDB conectado'))
+      .catch(err => {
+        console.error('⚠️  MongoDB error:', err.message);
+        connPromise = null; // permite reintentar en la siguiente request
+        throw err;
+      });
+  }
+  return connPromise;
 }
 
-// Middleware: espera conexión SOLO para rutas críticas (admin, checkout)
+// Arranca la conexión al cargar el módulo (no bloquea)
+conectarMongo().catch(() => {});
+
+// Middleware: toda ruta que use la base de datos espera la misma promesa
 app.use(async (req, res, next) => {
   // Health check siempre pasa sin esperar
   if (req.path === '/api/health' || req.path === '/api/debug-mongo') return next();
 
-  // Si ya está conectado, procede
-  if (mongoose.connection.readyState === 1) return next();
-
-  // Para rutas públicas (reservas), rechaza rápido sin esperar
-  if (req.path.startsWith('/api/reservas')) {
-    return res.status(503).json({ error: 'Base de datos no disponible - intenta de nuevo en segundos' });
+  try {
+    await conectarMongo();
+    next();
+  } catch (e) {
+    res.status(503).json({ error: 'Base de datos no disponible' });
   }
-
-  // SOLO para admin/checkout, intenta conectar
-  if (['/api/auth', '/api/checkout'].some(p => req.path.startsWith(p))) {
-    if (mongoose.connection.readyState === 0) {
-      try {
-        console.log('Attempting MongoDB connection...');
-        await mongoose.connect(process.env.MONGODB_URI, mongoOptions);
-        console.log('Connected!');
-      } catch (e) {
-        console.error('MongoDB connection error:', e.message);
-        return res.status(503).json({ error: 'Base de datos no disponible' });
-      }
-    }
-  }
-
-  // Si sigue desconectado/conectando, rechaza
-  if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({ error: 'Base de datos no disponible' });
-  }
-
-  next();
 });
 
 // Rutas API
