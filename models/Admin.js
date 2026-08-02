@@ -7,6 +7,19 @@ const adminSchema = new mongoose.Schema({
   nombre: { type: String, required: true },
   rol: { type: String, enum: ['owner', 'manager'], default: 'manager' },
   activo: { type: Boolean, default: true },
+
+  // Segundo factor (TOTP, compatible con Google Authenticator y Authy).
+  // El secreto se genera al iniciar el alta y solo cuenta como activo
+  // cuando la persona confirma un código válido.
+  totpSecret: { type: String, select: false },
+  totpActivo: { type: Boolean, default: false },
+  // Códigos de un solo uso por si pierde el teléfono. Se guardan hasheados.
+  codigosRespaldo: { type: [String], select: false, default: [] },
+
+  // Bloqueo tras intentos fallidos
+  intentosFallidos: { type: Number, default: 0 },
+  bloqueadoHasta: { type: Date },
+
   creadoEn: { type: Date, default: Date.now },
   ultimoAcceso: { type: Date, default: Date.now }
 });

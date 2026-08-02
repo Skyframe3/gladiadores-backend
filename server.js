@@ -51,6 +51,17 @@ app.use('/api/reservas', (req, res, next) => {
   next();
 });
 
+// El login es el blanco preferido de la fuerza bruta: límite propio y estrecho.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,                       // 10 intentos por IP cada 15 minutos
+  message: { error: 'Demasiados intentos de acceso. Espera 15 minutos.' },
+  skipSuccessfulRequests: true,  // no castiga a quien entra bien
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/api/auth/login', loginLimiter);
+
 app.use(express.json({ limit: '100kb' }));
 
 // Conexión a MongoDB con connection pooling para Vercel serverless

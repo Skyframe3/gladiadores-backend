@@ -1,10 +1,42 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { authenticator } from 'otplib';
+import QRCode from 'qrcode';
 import Admin from '../models/Admin.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// POST /api/auth/login — Login de admin
+// Tolera un paso de 30 s de desfase entre el reloj del teléfono y el servidor
+authenticator.options = { window: 1 };
+
+const EMISOR = 'Gladiadores Off Road';
+const MAX_INTENTOS = 5;
+const BLOQUEO_MINUTOS = 15;
+
+const firmarSesion = (admin) =>
+  jwt.sign(
+    { id: admin._id, email: admin.email, role: admin.rol },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+// Token intermedio: solo sirve para canjear el código 2FA, no da acceso a nada
+const firmarPaso2FA = (admin) =>
+  jwt.sign(
+    { id: admin._id, paso: '2fa' },
+    process.env.JWT_SECRET,
+    { expiresIn: '5m' }
+  );
+
+const generarCodigosRespaldo = () =>
+  Array.from({ length: 8 }, () =>
+    crypto.randomBytes(4).toString('hex').toUpperCase().match(/.{4}/g).join('-')
+  );
+
+// POST /api/auth/login — paso 1: email y contraseña
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -12,105 +44,211 @@ router.post('/login', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email y contraseña requeridos' });
     }
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET no configurado');
+      return res.status(500).json({ error: 'Error de configuración del servidor' });
+    }
 
-    const admin = await Admin.findOne({ email: email.toLowerCase() });
-    if (!admin) {
+    const admin = await Admin.findOne({ email: String(email).toLowerCase() });
+
+    // Mismo mensaje para usuario inexistente y contraseña mala:
+    // decir cuál de los dos falló revela qué correos son válidos.
+    if (!admin || !admin.activo) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    if (!admin.activo) {
-      return res.status(401).json({ error: 'Usuario desactivado' });
+    if (admin.bloqueadoHasta && admin.bloqueadoHasta > new Date()) {
+      const min = Math.ceil((admin.bloqueadoHasta - Date.now()) / 60000);
+      return res.status(429).json({ error: `Cuenta bloqueada. Intenta en ${min} minutos.` });
     }
 
     const passwordValido = await admin.comparePassword(password);
     if (!passwordValido) {
+      const intentos = (admin.intentosFallidos || 0) + 1;
+      const cambios = { intentosFallidos: intentos };
+      if (intentos >= MAX_INTENTOS) {
+        cambios.bloqueadoHasta = new Date(Date.now() + BLOQUEO_MINUTOS * 60000);
+        cambios.intentosFallidos = 0;
+      }
+      await Admin.updateOne({ _id: admin._id }, { $set: cambios });
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Actualizar último acceso sin disparar pre-save hook
-    await Admin.updateOne({ _id: admin._id }, { $set: { ultimoAcceso: new Date() } });
-
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET no configurado en el servidor');
-
-    const token = jwt.sign(
-      { id: admin._id, email: admin.email, role: admin.rol },
-      secret,
-      { expiresIn: '7d' }
+    await Admin.updateOne(
+      { _id: admin._id },
+      { $set: { intentosFallidos: 0, bloqueadoHasta: null } }
     );
+
+    // Con 2FA activo la sesión todavía no se entrega
+    if (admin.totpActivo) {
+      return res.json({ ok: true, requiere2FA: true, tempToken: firmarPaso2FA(admin) });
+    }
+
+    await Admin.updateOne({ _id: admin._id }, { $set: { ultimoAcceso: new Date() } });
 
     res.json({
       ok: true,
-      token,
-      admin: {
-        id: admin._id,
-        email: admin.email,
-        nombre: admin.nombre,
-        rol: admin.rol
-      }
+      token: firmarSesion(admin),
+      admin: { id: admin._id, email: admin.email, nombre: admin.nombre, rol: admin.rol },
+      avisos: { sin2FA: true }
     });
   } catch (err) {
-    console.error('Error login:', err);
+    console.error('Error login:', err.message);
     res.status(500).json({ error: 'Error al autenticar' });
   }
 });
 
-// POST /api/auth/register — Crear nuevo admin (solo owner puede hacer esto)
-router.post('/register', async (req, res) => {
+// POST /api/auth/login/2fa — paso 2: código del autenticador o de respaldo
+router.post('/login/2fa', async (req, res) => {
   try {
-    const { email, password, nombre, rol, adminSecret } = req.body;
-
-    // Solo se puede registrar si se proporciona el secreto correcto (para evitar spam)
-    if (adminSecret !== process.env.ADMIN_SECRET) {
-      return res.status(401).json({ error: 'No autorizado' });
+    const { tempToken, codigo } = req.body;
+    if (!tempToken || !codigo) {
+      return res.status(400).json({ error: 'Falta el código' });
     }
 
-    if (!email || !password || !nombre) {
-      return res.status(400).json({ error: 'Faltan datos requeridos' });
+    let payload;
+    try {
+      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'La sesión expiró, vuelve a iniciar' });
+    }
+    if (payload.paso !== '2fa') {
+      return res.status(401).json({ error: 'Token inválido' });
     }
 
-    // Verificar que el email no exista
-    const existente = await Admin.findOne({ email: email.toLowerCase() });
-    if (existente) {
-      return res.status(400).json({ error: 'Email ya registrado' });
+    const admin = await Admin.findById(payload.id).select('+totpSecret +codigosRespaldo');
+    if (!admin || !admin.activo) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // Crear nuevo admin
-    const nuevoAdmin = new Admin({
-      email: email.toLowerCase(),
-      passwordHash: password,
-      nombre,
-      rol: rol || 'manager'
-    });
+    const limpio = String(codigo).replace(/\s/g, '').toUpperCase();
+    let valido = authenticator.verify({ token: limpio, secret: admin.totpSecret });
 
-    await nuevoAdmin.save();
-
-    res.status(201).json({
-      ok: true,
-      admin: {
-        id: nuevoAdmin._id,
-        email: nuevoAdmin.email,
-        nombre: nuevoAdmin.nombre,
-        rol: nuevoAdmin.rol
+    // Si no es un TOTP, puede ser un código de respaldo: se consume al usarlo
+    if (!valido && admin.codigosRespaldo?.length) {
+      for (const hash of admin.codigosRespaldo) {
+        if (await bcrypt.compare(limpio, hash)) {
+          await Admin.updateOne({ _id: admin._id }, { $pull: { codigosRespaldo: hash } });
+          valido = true;
+          break;
+        }
       }
+    }
+
+    if (!valido) {
+      return res.status(401).json({ error: 'Código incorrecto' });
+    }
+
+    await Admin.updateOne({ _id: admin._id }, { $set: { ultimoAcceso: new Date() } });
+
+    res.json({
+      ok: true,
+      token: firmarSesion(admin),
+      admin: { id: admin._id, email: admin.email, nombre: admin.nombre, rol: admin.rol }
     });
   } catch (err) {
-    console.error('Error register:', err);
-    res.status(500).json({ error: 'Error al registrar admin' });
+    console.error('Error 2FA:', err.message);
+    res.status(500).json({ error: 'Error al verificar el código' });
   }
 });
 
-// GET /api/auth/verify — Verificar token JWT
-router.get('/verify', (req, res) => {
+// POST /api/auth/2fa/preparar — genera el secreto y el QR para escanear
+router.post('/2fa/preparar', authMiddleware, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ ok: false, error: 'Token requerido' });
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (admin.totpActivo) {
+      return res.status(400).json({ error: 'El segundo factor ya está activo' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    res.json({ ok: true, admin: decoded });
+    const secret = authenticator.generateSecret();
+    // Se guarda pero sigue inactivo hasta que confirme un código válido
+    await Admin.updateOne({ _id: admin._id }, { $set: { totpSecret: secret } });
+
+    const otpauth = authenticator.keyuri(admin.email, EMISOR, secret);
+    const qr = await QRCode.toDataURL(otpauth, { margin: 1, width: 260 });
+
+    res.json({ ok: true, qr, secret, emisor: EMISOR });
   } catch (err) {
+    console.error('Error preparando 2FA:', err.message);
+    res.status(500).json({ error: 'Error al preparar el segundo factor' });
+  }
+});
+
+// POST /api/auth/2fa/activar — confirma con un código y entrega los de respaldo
+router.post('/2fa/activar', authMiddleware, async (req, res) => {
+  try {
+    const { codigo } = req.body;
+    if (!codigo) return res.status(400).json({ error: 'Falta el código' });
+
+    const admin = await Admin.findById(req.user.id).select('+totpSecret');
+    if (!admin?.totpSecret) {
+      return res.status(400).json({ error: 'Primero genera el código QR' });
+    }
+
+    const valido = authenticator.verify({
+      token: String(codigo).replace(/\s/g, ''),
+      secret: admin.totpSecret
+    });
+    if (!valido) return res.status(401).json({ error: 'Código incorrecto' });
+
+    const codigos = generarCodigosRespaldo();
+    const hashes = await Promise.all(codigos.map(c => bcrypt.hash(c, 10)));
+
+    await Admin.updateOne(
+      { _id: admin._id },
+      { $set: { totpActivo: true, codigosRespaldo: hashes } }
+    );
+
+    // Única vez que los códigos se ven en claro
+    res.json({ ok: true, codigosRespaldo: codigos });
+  } catch (err) {
+    console.error('Error activando 2FA:', err.message);
+    res.status(500).json({ error: 'Error al activar el segundo factor' });
+  }
+});
+
+// POST /api/auth/2fa/desactivar — exige la contraseña para evitar que
+// una sesión robada apague la protección
+router.post('/2fa/desactivar', authMiddleware, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Confirma tu contraseña' });
+
+    const admin = await Admin.findById(req.user.id);
+    if (!admin) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    if (!(await admin.comparePassword(password))) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
+
+    await Admin.updateOne(
+      { _id: admin._id },
+      { $set: { totpActivo: false, totpSecret: null, codigosRespaldo: [] } }
+    );
+
+    res.json({ ok: true, mensaje: 'Segundo factor desactivado' });
+  } catch (err) {
+    console.error('Error desactivando 2FA:', err.message);
+    res.status(500).json({ error: 'Error al desactivar el segundo factor' });
+  }
+});
+
+// GET /api/auth/verify — estado de la sesión actual
+router.get('/verify', authMiddleware, async (req, res) => {
+  try {
+    const admin = await Admin.findById(req.user.id);
+    if (!admin || !admin.activo) {
+      return res.status(401).json({ ok: false, error: 'Sesión inválida' });
+    }
+    res.json({
+      ok: true,
+      admin: {
+        id: admin._id, email: admin.email, nombre: admin.nombre,
+        rol: admin.rol, totpActivo: admin.totpActivo
+      }
+    });
+  } catch {
     res.status(401).json({ ok: false, error: 'Token inválido' });
   }
 });
