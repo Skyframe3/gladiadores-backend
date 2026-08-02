@@ -43,6 +43,11 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Exigir cadenas: si llega un objeto como {"$ne":null}, mongoose lo
+    // interpretaría como operador de consulta y bcrypt reventaría con un 500.
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    }
     if (!email || !password) {
       return res.status(400).json({ error: 'Email y contraseña requeridos' });
     }

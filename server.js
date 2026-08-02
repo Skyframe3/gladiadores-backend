@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
 import catalogoRouter from './routes/catalogo.js';
+import { authMiddleware, adminMiddleware } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -111,11 +112,15 @@ app.use(async (req, res, next) => {
 });
 
 // Rutas API
-app.get('/api/health', async (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), v: 5, jwt: !!process.env.JWT_SECRET, db: !!process.env.MONGODB_URI, dbState: mongoose.connection.readyState });
+// Sonda de vida. No revela qué variables están configuradas ni el estado
+// interno de la conexión: eso le sirve más a quien sondea que a nosotros.
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/debug-mongo', async (req, res) => {
+// Diagnóstico de conexión. Expone nombres de colecciones y estado interno,
+// así que va detrás de autenticación de administrador.
+app.get('/api/debug-mongo', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const state = mongoose.connection.readyState;
     // 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
