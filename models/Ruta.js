@@ -1,15 +1,11 @@
 import mongoose from 'mongoose';
 
-// Unidad dentro de una ruta: el admin puede cambiarle precio,
-// desactivarla completa o bloquear asientos sueltos.
-const unidadSchema = new mongoose.Schema({
-  id: { type: String, required: true },
-  name: { type: String, required: true },
-  type: { type: String, default: '' },
-  seats: { type: Number, required: true, min: 1, max: 12 },
-  price: { type: Number, required: true, min: 0 },
-  booked: { type: [Number], default: [] },   // asientos bloqueados por el admin
-  activo: { type: Boolean, default: true }
+// Precio de la ruta para una configuración de unidad (maverick-4,
+// commander-2...). La flota es global; lo que cambia por ruta es el precio.
+const precioSchema = new mongoose.Schema({
+  tipoId: { type: String, required: true },
+  precio: { type: Number, required: true, min: 0 },
+  activo: { type: Boolean, default: true }   // permite no ofrecer un tipo en esta ruta
 }, { _id: false });
 
 // Horario con switch propio para poder apagar una salida sin borrarla
@@ -33,13 +29,15 @@ const rutaSchema = new mongoose.Schema({
   desc: { type: String, default: '' },
   terrain: { type: [String], default: [] },
   horarios: { type: [horarioSchema], default: [] },
-  units: { type: [unidadSchema], default: [] },
+  precios: { type: [precioSchema], default: [] },
   activo: { type: Boolean, default: true },
   orden: { type: Number, default: 0 },
   actualizadaEn: { type: Date, default: Date.now }
 });
 
-// Forma que espera el frontend: horarios y unidades inactivas ya filtradas
+// Forma que espera el frontend: horarios y precios inactivos ya filtrados.
+// Las unidades no vienen aquí; se piden por fecha y horario a
+// /api/disponibilidad, porque la flota se comparte entre todas las rutas.
 rutaSchema.methods.toPublico = function () {
   return {
     id: this.rid,
@@ -56,15 +54,17 @@ rutaSchema.methods.toPublico = function () {
     desc: this.desc,
     terrain: this.terrain,
     horarios: this.horarios.filter(h => h.activo).map(h => h.hora),
-    units: this.units.filter(u => u.activo).map(u => ({
-      id: u.id,
-      name: u.name,
-      type: u.type,
-      seats: u.seats,
-      booked: u.booked,
-      price: u.price
+    precios: this.precios.filter(p => p.activo).map(p => ({
+      tipoId: p.tipoId,
+      precio: p.precio
     }))
   };
+};
+
+// Precio de esta ruta para una configuración, o null si no se ofrece
+rutaSchema.methods.precioDe = function (tipoId) {
+  const p = this.precios.find(x => x.tipoId === tipoId && x.activo);
+  return p ? p.precio : null;
 };
 
 export default mongoose.model('Ruta', rutaSchema);

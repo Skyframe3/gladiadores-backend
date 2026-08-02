@@ -12,10 +12,14 @@ const reservaSchema = new mongoose.Schema({
 
   // Datos de la ruta
   ruta: { type: String, required: true },
-  unidad: { type: String, required: true },
+  rutaId: { type: Number, index: true },       // rid de la ruta reservada
+  unidad: { type: String, required: true },    // nombre legible
+  unidadCodigo: { type: String, index: true }, // máquina física de la flota
   horario: { type: String, required: true },
   fecha: { type: Date, required: true },
   asientos: [Number],
+  // 'asientos' = comparte la unidad con otros; 'unidad' = la aparta completa
+  modoVenta: { type: String, enum: ['asientos', 'unidad'], default: 'asientos' },
 
   // Extras
   extras: [String],
@@ -39,6 +43,10 @@ const reservaSchema = new mongoose.Schema({
   creadaEn: { type: Date, default: Date.now },
   actualizadaEn: { type: Date, default: Date.now }
 });
+
+// Consultar qué unidades están ocupadas en una fecha y horario es
+// la operación más frecuente del sistema de reservas.
+reservaSchema.index({ fecha: 1, horario: 1, estado: 1 });
 
 reservaSchema.pre('save', function (next) {
   this.actualizadaEn = new Date();

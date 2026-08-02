@@ -2,15 +2,17 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { authenticator } from 'otplib';
+// otplib 13 expone funciones sueltas; el objeto `authenticator` de las
+// versiones anteriores ya no existe.
+import { generateSecret, generateURI, verify as verificarOTP } from 'otplib';
 import QRCode from 'qrcode';
 import Admin from '../models/Admin.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Tolera un paso de 30 s de desfase entre el reloj del teléfono y el servidor
-authenticator.options = { window: 1 };
+// Margen para el desfase entre el reloj del teléfono y el del servidor
+const TOLERANCIA_SEG = 30;
 
 const EMISOR = 'Gladiadores Off Road';
 const MAX_INTENTOS = 5;
@@ -122,7 +124,13 @@ router.post('/login/2fa', async (req, res) => {
     }
 
     const limpio = String(codigo).replace(/\s/g, '').toUpperCase();
-    let valido = authenticator.verify({ token: limpio, secret: admin.totpSecret });
+    let valido = false;
+    if (admin.totpSecret) {
+      const r = await verificarOTP({
+        secret: admin.totpSecret, token: limpio, epochTolerance: TOLERANCIA_SEG
+      });
+      valido = r.valid;
+    }
 
     // Si no es un TOTP, puede ser un código de respaldo: se consume al usarlo
     if (!valido && admin.codigosRespaldo?.length) {
@@ -161,11 +169,11 @@ router.post('/2fa/preparar', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'El segundo factor ya está activo' });
     }
 
-    const secret = authenticator.generateSecret();
+    const secret = generateSecret();
     // Se guarda pero sigue inactivo hasta que confirme un código válido
     await Admin.updateOne({ _id: admin._id }, { $set: { totpSecret: secret } });
 
-    const otpauth = authenticator.keyuri(admin.email, EMISOR, secret);
+    const otpauth = generateURI({ secret, label: admin.email, issuer: EMISOR });
     const qr = await QRCode.toDataURL(otpauth, { margin: 1, width: 260 });
 
     res.json({ ok: true, qr, secret, emisor: EMISOR });
@@ -186,11 +194,12 @@ router.post('/2fa/activar', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Primero genera el código QR' });
     }
 
-    const valido = authenticator.verify({
+    const { valid } = await verificarOTP({
+      secret: admin.totpSecret,
       token: String(codigo).replace(/\s/g, ''),
-      secret: admin.totpSecret
+      epochTolerance: TOLERANCIA_SEG
     });
-    if (!valido) return res.status(401).json({ error: 'Código incorrecto' });
+    if (!valid) return res.status(401).json({ error: 'Código incorrecto' });
 
     const codigos = generarCodigosRespaldo();
     const hashes = await Promise.all(codigos.map(c => bcrypt.hash(c, 10)));
