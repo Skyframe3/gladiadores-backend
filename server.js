@@ -9,6 +9,8 @@ import authRouter from './routes/auth.js';
 import webhooksRouter from './routes/webhooks.js';
 import checkoutRouter from './routes/checkout.js';
 import catalogoRouter from './routes/catalogo.js';
+import disponibilidadRouter from './routes/disponibilidad.js';
+import chatbotRouter from './routes/chatbot.js';
 import { authMiddleware, adminMiddleware } from './middleware/auth.js';
 
 dotenv.config();
@@ -160,6 +162,8 @@ app.use('/api/catalogo', catalogoRouter);
 app.use('/api/reservas', reservasRouter);
 app.use('/api/checkout', checkoutRouter);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/disponibilidad', disponibilidadRouter);
+app.use('/api/chatbot', chatbotRouter);
 
 // 404
 app.use((req, res) => {
