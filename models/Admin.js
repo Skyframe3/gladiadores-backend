@@ -18,6 +18,9 @@ const adminSchema = new mongoose.Schema({
 
   // Bloqueo tras intentos fallidos
   intentosFallidos: { type: Number, default: 0 },
+  // El segundo factor lleva su propia cuenta: quien ya pasó la contraseña
+  // y falla el código repetidas veces también tiene que quedar fuera.
+  intentosFallidos2FA: { type: Number, default: 0 },
   bloqueadoHasta: { type: Date },
 
   creadoEn: { type: Date, default: Date.now },

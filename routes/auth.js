@@ -128,9 +128,20 @@ router.post('/login/2fa', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    // El código son 6 dígitos contra un millón de combinaciones: sin un tope
+    // de intentos, quien ya tenga la contraseña puede probarlas todas.
+    if (admin.bloqueadoHasta && admin.bloqueadoHasta > new Date()) {
+      const min = Math.ceil((admin.bloqueadoHasta - Date.now()) / 60000);
+      return res.status(429).json({ error: `Cuenta bloqueada. Intenta en ${min} minutos.` });
+    }
+
     const limpio = String(codigo).replace(/\s/g, '').toUpperCase();
     let valido = false;
-    if (admin.totpSecret) {
+    // Un TOTP son 6 dígitos; un código de respaldo tiene la forma XXXX-XXXX.
+    // Separarlos evita gastar ocho comparaciones bcrypt en cada intento.
+    const pareceTOTP = /^\d{6}$/.test(limpio);
+
+    if (pareceTOTP && admin.totpSecret) {
       const r = await verificarOTP({
         secret: admin.totpSecret, token: limpio, epochTolerance: TOLERANCIA_SEG
       });
@@ -138,7 +149,7 @@ router.post('/login/2fa', async (req, res) => {
     }
 
     // Si no es un TOTP, puede ser un código de respaldo: se consume al usarlo
-    if (!valido && admin.codigosRespaldo?.length) {
+    if (!valido && !pareceTOTP && admin.codigosRespaldo?.length) {
       for (const hash of admin.codigosRespaldo) {
         if (await bcrypt.compare(limpio, hash)) {
           await Admin.updateOne({ _id: admin._id }, { $pull: { codigosRespaldo: hash } });
@@ -149,10 +160,22 @@ router.post('/login/2fa', async (req, res) => {
     }
 
     if (!valido) {
+      const intentos = (admin.intentosFallidos2FA || 0) + 1;
+      const cambios = { intentosFallidos2FA: intentos };
+      if (intentos >= MAX_INTENTOS) {
+        // El bloqueo es de la cuenta, no del token: así tampoco puede
+        // volver a /login a pedir un tempToken nuevo y seguir probando.
+        cambios.bloqueadoHasta = new Date(Date.now() + BLOQUEO_MINUTOS * 60000);
+        cambios.intentosFallidos2FA = 0;
+      }
+      await Admin.updateOne({ _id: admin._id }, { $set: cambios });
       return res.status(401).json({ error: 'Código incorrecto' });
     }
 
-    await Admin.updateOne({ _id: admin._id }, { $set: { ultimoAcceso: new Date() } });
+    await Admin.updateOne(
+      { _id: admin._id },
+      { $set: { intentosFallidos2FA: 0, bloqueadoHasta: null, ultimoAcceso: new Date() } }
+    );
 
     res.json({
       ok: true,

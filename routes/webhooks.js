@@ -11,7 +11,13 @@ const router = express.Router();
 // una reserva que nadie cobró.
 function firmaValida(req) {
   const secreto = process.env.MP_WEBHOOK_SECRET;
-  if (!secreto) return null;              // sin secreto configurado no se puede verificar
+  // Sin secreto no hay forma de comprobar que el aviso venga de Mercado
+  // Pago: tratarlo como "no verificado" y dejarlo pasar permitiría que
+  // cualquiera marque una reserva como pagada con un POST directo.
+  if (!secreto) {
+    console.error('MP_WEBHOOK_SECRET no configurado: rechazando el webhook');
+    return false;
+  }
 
   const cabecera = req.headers['x-signature'];
   const requestId = req.headers['x-request-id'];
@@ -37,13 +43,9 @@ function firmaValida(req) {
 // POST /api/webhooks/mercadopago
 router.post('/mercadopago', async (req, res) => {
   try {
-    const valida = firmaValida(req);
-    if (valida === false) {
-      console.warn('Webhook con firma inválida, descartado');
+    if (!firmaValida(req)) {
+      console.warn('Webhook con firma inválida o sin verificar, descartado');
       return res.status(401).json({ error: 'Firma inválida' });
-    }
-    if (valida === null) {
-      console.warn('MP_WEBHOOK_SECRET no configurado: no se puede verificar el origen');
     }
 
     const { type, data } = req.body;
