@@ -24,3 +24,12 @@ export const adminMiddleware = (req, res, next) => {
   }
   next();
 };
+
+// Ajustes sensibles (comportamiento del agente, promociones, tono) solo
+// para el dueño. Un manager pasa adminMiddleware pero no este.
+export const ownerMiddleware = (req, res, next) => {
+  if (req.user?.role !== 'owner') {
+    return res.status(403).json({ error: 'Acceso denegado: solo el dueño puede modificar esto' });
+  }
+  next();
+};

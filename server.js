@@ -11,6 +11,7 @@ import checkoutRouter from './routes/checkout.js';
 import catalogoRouter from './routes/catalogo.js';
 import disponibilidadRouter from './routes/disponibilidad.js';
 import chatbotRouter from './routes/chatbot.js';
+import agenteRouter from './routes/agente.js';
 import { authMiddleware, adminMiddleware } from './middleware/auth.js';
 
 dotenv.config();
@@ -64,6 +65,17 @@ const loginLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api/auth/login', loginLimiter);
+
+// El agente llama a la API de Anthropic, que cuesta dinero por token:
+// un límite propio evita que alguien vacíe la cuenta a punta de mensajes.
+const chatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,                         // 20 mensajes cada 5 minutos por IP
+  message: { error: 'Muchos mensajes seguidos. Espera un momento.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/api/chatbot/mensaje', chatLimiter);
 
 app.use(express.json({ limit: '100kb' }));
 
@@ -164,6 +176,7 @@ app.use('/api/checkout', checkoutRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/disponibilidad', disponibilidadRouter);
 app.use('/api/chatbot', chatbotRouter);
+app.use('/api/admin/agente', agenteRouter);
 
 // 404
 app.use((req, res) => {
