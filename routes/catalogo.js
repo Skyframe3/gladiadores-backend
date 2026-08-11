@@ -49,6 +49,24 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
       if (req.body[campo] !== undefined) ruta[campo] = req.body[campo];
     }
 
+    // Galería: hasta 10 fotos, cada una una ruta o URL corta y sin caracteres raros
+    if (Array.isArray(req.body.galeria)) {
+      ruta.galeria = req.body.galeria
+        .filter(g => typeof g === 'string' && g.trim().length > 0 && g.length <= 500)
+        .slice(0, 10)
+        .map(g => g.trim());
+    }
+
+    // Video: liga de Instagram o YouTube únicamente
+    if (typeof req.body.video === 'string') {
+      const v = req.body.video.trim();
+      if (v === '' || /^https:\/\/(www\.)?(youtube\.com|youtu\.be|instagram\.com)\//.test(v)) {
+        ruta.video = v;
+      } else {
+        return res.status(400).json({ error: 'video: solo se aceptan ligas de YouTube o Instagram' });
+      }
+    }
+
     // Horarios: llegan como [{hora, activo}]
     if (Array.isArray(req.body.horarios)) {
       ruta.horarios = req.body.horarios

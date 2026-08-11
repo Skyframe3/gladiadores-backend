@@ -23,7 +23,9 @@ const rutaSchema = new mongoose.Schema({
   name: { type: String, required: true },
   tag: { type: String, default: '' },
   exp: { type: String, default: 'panoramica' },
-  img: { type: String, default: '' },
+  img: { type: String, default: '' },       // foto de portada
+  galeria: { type: [String], default: [] }, // hasta 10 fotos adicionales de la ruta
+  video: { type: String, default: '' },     // liga de Instagram o YouTube
   gal: { type: Number, default: 0 },
   acc: { type: String, default: '#52A030' },
   diffC: { type: String, default: '#30B030' },
@@ -47,7 +49,9 @@ rutaSchema.methods.toPublico = function () {
     tag: this.tag,
     exp: this.exp,
     img: this.img,
-    gal: this.gal,
+    galeria: this.galeria,
+    video: this.video,
+    gal: this.galeria.length || this.gal,
     acc: this.acc,
     diffC: this.diffC,
     diff: this.diff,

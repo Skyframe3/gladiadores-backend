@@ -1,16 +1,46 @@
 import express from 'express';
 import Counter from '../models/Counter.js';
 import Reserva from '../models/Reserva.js';
+import Ruta from '../models/Ruta.js';
+import Unidad from '../models/Unidad.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 import { validateReserva, validateEstado } from '../middleware/validation.js';
 import { enviarConfirmacionReserva } from '../services/whatsapp.js';
+import { unidadesOcupadasEnFecha } from './disponibilidad.js';
 
 const router = express.Router();
 
 // POST /api/reservas — Crear nueva reserva con folio secuencial (sin auth para clientes)
+//
+// El cliente elige una CATEGORÍA (ej. "maverick-4"), nunca una máquina
+// específica: cuál apodo le toca (Máximo, Espartano...) lo decide el
+// servidor aquí mismo, checando en tiempo real cuáles de las unidades
+// reales de esa categoría siguen libres ese día. Así una sola máquina
+// nunca puede quedar vendida dos veces el mismo día, sin importar en
+// qué ruta se haya reservado.
 router.post('/', validateReserva, async (req, res) => {
   try {
-    const { nombre, email, whatsapp, ruta, unidad, horario, fecha, asientos, extras, monto, modoPago, metodoPago } = req.body;
+    const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, asientos, extras, monto, modoPago, metodoPago } = req.body;
+
+    const rutaObj = await Ruta.findOne({ rid: rutaId, activo: true });
+    if (!rutaObj) return res.status(404).json({ error: 'Esa ruta ya no está disponible' });
+
+    const categoria = rutaObj.units.find(u => u.id === categoriaId);
+    if (!categoria || !categoria.activo) {
+      return res.status(409).json({ error: 'Esa unidad ya no se ofrece en esta ruta' });
+    }
+
+    const ocupadas = await unidadesOcupadasEnFecha(fecha);
+    const libre = await Unidad.findOne({
+      tipo: categoria.id.split('-')[0],
+      plazas: Number(categoria.id.split('-')[1]),
+      activo: true,
+      codigo: { $nin: Array.from(ocupadas) }
+    }).sort({ orden: 1 });
+
+    if (!libre) {
+      return res.status(409).json({ error: 'Ya no hay unidades disponibles para esa fecha. Elige otra fecha u otra unidad.' });
+    }
 
     // Generar folio secuencial
     const folio = await Counter.getNextFolio();
@@ -20,7 +50,9 @@ router.post('/', validateReserva, async (req, res) => {
       folio,
       cliente: { nombre, email, whatsapp },
       ruta,
-      unidad,
+      rutaId,
+      unidad: libre.nombreCompleto,
+      unidadCodigo: libre.codigo,
       horario,
       fecha: new Date(fecha),
       asientos,
@@ -30,6 +62,14 @@ router.post('/', validateReserva, async (req, res) => {
       metodoPago: metodoPago || 'mercadopago'
     });
 
+    // Revalida justo antes de guardar: si otra persona ganó esta misma
+    // unidad en el instante entre el check de arriba y este punto, no
+    // se duplica — se vuelve a intentar con la siguiente unidad libre.
+    const ocupadasAhora = await unidadesOcupadasEnFecha(fecha);
+    if (ocupadasAhora.has(libre.codigo)) {
+      return res.status(409).json({ error: 'Alguien más acaba de apartar esa unidad. Intenta de nuevo.' });
+    }
+
     await reserva.save();
 
     // Enviar confirmación por WhatsApp en background (no espera)
@@ -38,6 +78,7 @@ router.post('/', validateReserva, async (req, res) => {
     res.status(201).json({
       ok: true,
       folio: reserva.folio,
+      unidad: libre.nombreCompleto,
       mensaje: `Reserva ${folio} creada. Revisa tu WhatsApp para confirmar el pago.`
     });
   } catch (err) {

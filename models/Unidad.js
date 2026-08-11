@@ -18,12 +18,13 @@ unidadSchema.virtual('tipoId').get(function () {
   return `${this.tipo}-${this.plazas}`;
 });
 
-// Legible para admin y cliente. El Commander de 2 plazas no lleva "Max":
-// esa palabra es exclusiva de la versión larga (4 plazas) en el catálogo real de Can-Am.
+// Legible para admin y cliente. El Commander de 2 plazas no lleva "Max"
+// (esa palabra es exclusiva de la versión larga), y el Maverick de 2
+// plazas es específicamente el trim X RC, no el genérico X3.
 unidadSchema.virtual('nombreCompleto').get(function () {
   const tipos = {
     cuatrimoto: 'Cuatrimoto',
-    maverick: 'Maverick X3',
+    maverick: this.plazas <= 2 ? 'Maverick X RC' : 'Maverick X3',
     commander: this.plazas <= 2 ? 'Commander' : 'Commander Max'
   };
   return `${tipos[this.tipo] || this.tipo} · ${this.apodo}`;
@@ -40,7 +41,10 @@ export const ETIQUETAS_TIPO = {
 
 export const tipoIdLegible = (tipoId) => {
   const [tipo, plazas] = String(tipoId).split('-');
-  const etiqueta = (tipo === 'commander' && Number(plazas) <= 2) ? 'Commander' : (ETIQUETAS_TIPO[tipo] || tipo);
+  const n = Number(plazas);
+  let etiqueta = ETIQUETAS_TIPO[tipo] || tipo;
+  if (tipo === 'commander' && n <= 2) etiqueta = 'Commander';
+  if (tipo === 'maverick' && n <= 2) etiqueta = 'Maverick X RC';
   return `${etiqueta} · ${plazas} plazas`;
 };
 
