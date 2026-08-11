@@ -25,7 +25,14 @@ router.get('/admin', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Campos que el panel puede tocar. Lo demás se ignora.
-const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain'];
+const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain', 'img'];
+
+// Categorías de las que solo existe UNA máquina física en toda la flotilla
+// (ver models/Unidad.js: Minimi es el único Commander de 2 plazas, Don Mabel
+// el único Maverick de 2 plazas). Si el dueño la marca ocupada en una ruta,
+// físicamente no puede estar libre en ninguna otra: hay que apagarla en
+// todas a la vez o se podría vender dos veces la misma unidad.
+const CATEGORIAS_UNICAS = ['commander-2', 'maverick-2'];
 
 // PATCH /api/catalogo/:rid — actualizar una ruta
 router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
@@ -50,6 +57,7 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
     }
 
     // Unidades: precio, asientos bloqueados y switch de activo
+    const idsUnicasParaSincronizar = new Map(); // id de categoría -> nuevo activo
     if (Array.isArray(req.body.units)) {
       for (const cambio of req.body.units) {
         const unidad = ruta.units.find(u => u.id === cambio.id);
@@ -59,7 +67,13 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
           const precio = Number(cambio.price);
           if (Number.isFinite(precio) && precio >= 0) unidad.price = precio;
         }
-        if (cambio.activo !== undefined) unidad.activo = !!cambio.activo;
+        if (cambio.activo !== undefined) {
+          const nuevoActivo = !!cambio.activo;
+          if (unidad.activo !== nuevoActivo && CATEGORIAS_UNICAS.includes(unidad.id)) {
+            idsUnicasParaSincronizar.set(unidad.id, nuevoActivo);
+          }
+          unidad.activo = nuevoActivo;
+        }
         if (cambio.name !== undefined) unidad.name = String(cambio.name);
         if (Array.isArray(cambio.booked)) {
           unidad.booked = cambio.booked
@@ -72,7 +86,26 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
     ruta.actualizadaEn = new Date();
     await ruta.save();
 
-    res.json({ ok: true, mensaje: `Ruta "${ruta.name}" actualizada`, ruta });
+    // Solo existe una máquina física de estas categorías: si aquí quedó
+    // ocupada (o libre), en cualquier otra ruta tiene que verse igual.
+    let rutasSincronizadas = 0;
+    if (idsUnicasParaSincronizar.size > 0) {
+      for (const [idUnidad, nuevoActivo] of idsUnicasParaSincronizar) {
+        const resultado = await Ruta.updateMany(
+          { rid: { $ne: rid }, 'units.id': idUnidad },
+          { $set: { 'units.$[u].activo': nuevoActivo, actualizadaEn: new Date() } },
+          { arrayFilters: [{ 'u.id': idUnidad }] }
+        );
+        rutasSincronizadas += resultado.modifiedCount || 0;
+      }
+    }
+
+    res.json({
+      ok: true,
+      mensaje: `Ruta "${ruta.name}" actualizada` + (rutasSincronizadas > 0 ? ` · sincronizada en ${rutasSincronizadas} ruta(s) más` : ''),
+      ruta,
+      rutasSincronizadas
+    });
   } catch (err) {
     console.error('Error al actualizar ruta:', err.message);
     res.status(500).json({ error: 'Error al actualizar la ruta' });
