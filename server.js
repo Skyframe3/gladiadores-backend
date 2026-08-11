@@ -12,6 +12,7 @@ import catalogoRouter from './routes/catalogo.js';
 import disponibilidadRouter from './routes/disponibilidad.js';
 import chatbotRouter from './routes/chatbot.js';
 import agenteRouter from './routes/agente.js';
+import uploadRouter from './routes/upload.js';
 import { authMiddleware, adminMiddleware } from './middleware/auth.js';
 
 dotenv.config();
@@ -177,6 +178,7 @@ app.use('/api/webhooks', webhooksRouter);
 app.use('/api/disponibilidad', disponibilidadRouter);
 app.use('/api/chatbot', chatbotRouter);
 app.use('/api/admin/agente', agenteRouter);
+app.use('/api/admin/upload', uploadRouter);
 
 // 404
 app.use((req, res) => {
