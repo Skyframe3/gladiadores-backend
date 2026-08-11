@@ -31,8 +31,20 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ error: 'Hora inválida (usa HH:MM)' });
     }
 
-    const ocupadas = await unidadesOcupadasEnFecha(fecha);
-    const unidades = await Unidad.find({ activo: true }).sort({ orden: 1 });
+    // Detalle de qué reserva ocupa cada unidad ese día (para el panel del
+    // dueño: "¿quién tiene el Commander el 15 de diciembre?").
+    const inicio = new Date(fecha + 'T00:00:00Z');
+    const fin = new Date(inicio.getTime() + 86400000);
+    const reservasDelDia = await Reserva.find({
+      fecha: { $gte: inicio, $lt: fin },
+      estado: { $ne: 'cancelada' }
+    }).select('unidadCodigo folio ruta horario cliente.nombre');
+    const detallePorCodigo = {};
+    reservasDelDia.forEach(r => {
+      if (r.unidadCodigo) detallePorCodigo[r.unidadCodigo] = { folio: r.folio, ruta: r.ruta, horario: r.horario, cliente: r.cliente?.nombre };
+    });
+    const ocupadas = new Set(Object.keys(detallePorCodigo));
+    const unidades = await Unidad.find().sort({ orden: 1 });
 
     // Precio por categoría: el id de la categoría de la ruta (ej. "maverick-4")
     // coincide 1:1 con el tipoId de la unidad física del mismo tipo.
@@ -46,7 +58,7 @@ router.get('/', async (req, res) => {
     }
 
     const disponibles = unidades
-      .filter(u => !ocupadas.has(u.codigo))
+      .filter(u => u.activo && !ocupadas.has(u.codigo))
       .filter(u => !rutaObj || preciosPorCategoria[u.tipoId]?.activo) // si hay ruta, solo categorías que vende esa ruta
       .map(u => ({
         id: u._id.toString(),
@@ -68,6 +80,20 @@ router.get('/', async (req, res) => {
       porCategoria[u.tipoId].libres++;
     });
 
+    // Roster completo (libres, ocupadas y de mantenimiento) para el panel
+    // del dueño. No se usa en la reserva del cliente, solo en el admin.
+    const todas = unidades.map(u => ({
+      codigo: u.codigo,
+      apodo: u.apodo,
+      tipo: u.tipo,
+      plazas: u.plazas,
+      tipoId: u.tipoId,
+      nombreCompleto: u.nombreCompleto,
+      activo: u.activo,
+      libre: u.activo && !ocupadas.has(u.codigo),
+      ocupacion: detallePorCodigo[u.codigo] || null
+    }));
+
     res.json({
       ok: true,
       fecha,
@@ -75,7 +101,8 @@ router.get('/', async (req, res) => {
       ruta: ruta ? Number(ruta) : null,
       total: disponibles.length,
       unidades: disponibles,
-      categorias: Object.values(porCategoria)
+      categorias: Object.values(porCategoria),
+      todas
     });
   } catch (err) {
     console.error('Error en disponibilidad:', err.message);
