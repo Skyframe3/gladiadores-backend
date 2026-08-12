@@ -9,7 +9,7 @@ const router = express.Router();
 // directo a Vercel Blob y se olvida.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB por foto
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB (Vercel Hobby = 4.5 MB body limit)
   fileFilter: (req, file, cb) => {
     if (!/^image\/(jpeg|png|webp|avif|gif)$/.test(file.mimetype)) {
       return cb(new Error('Solo se aceptan imágenes (jpg, png, webp, avif, gif)'));
@@ -22,7 +22,7 @@ const upload = multer({
 router.post('/', authMiddleware, adminMiddleware, (req, res) => {
   upload.single('foto')(req, res, async (err) => {
     if (err) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'La foto pesa más de 8 MB' : err.message;
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'La foto pesa más de 4 MB' : err.message;
       return res.status(400).json({ error: msg });
     }
     if (!req.file) return res.status(400).json({ error: 'No llegó ningún archivo' });
