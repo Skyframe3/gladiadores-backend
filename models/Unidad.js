@@ -46,7 +46,11 @@ export const tipoIdLegible = (tipoId) => {
   return `${etiqueta} · ${plazas} plazas`;
 };
 
-// FLOTA REAL según especificación del usuario
+// FLOTA REAL según especificación del usuario.
+// `orden` es además el número de la máquina: la 1 y la 2 son las motos y de
+// ahí se sigue hasta la 12, agrupadas por familia. El panel las muestra como
+// "Unidad 7 · Don Mave" para que en el taller y en el calendario todos se
+// refieran a la misma máquina sin depender del apodo.
 export const FLOTA = [
   // Cuatrimotos (2 plazas)
   { codigo: 'CUAD-01', apodo: 'Blue', tipo: 'cuatrimoto', plazas: 2, orden: 1 },
@@ -59,12 +63,12 @@ export const FLOTA = [
   { codigo: 'CMD4-03', apodo: 'Ares', tipo: 'commander', plazas: 4, orden: 6 },
 
   // Mavericks
-  { codigo: 'MAV4-01', apodo: 'Máximo', tipo: 'maverick', plazas: 4, orden: 7 },
-  { codigo: 'MAV4-02', apodo: 'Espartano', tipo: 'maverick', plazas: 4, orden: 8 },
-  { codigo: 'MAV4-03', apodo: 'RS', tipo: 'maverick', plazas: 4, orden: 9 },
-  { codigo: 'MAV4-04', apodo: 'Black', tipo: 'maverick', plazas: 4, orden: 10 },
-  { codigo: 'MAV4-05', apodo: 'Gladio', tipo: 'maverick', plazas: 4, orden: 11 },
-  { codigo: 'MAV2-01', apodo: 'Don Mave', tipo: 'maverick', plazas: 2, orden: 12 }
+  { codigo: 'MAV2-01', apodo: 'Don Mave', tipo: 'maverick', plazas: 2, orden: 7 },
+  { codigo: 'MAV4-01', apodo: 'Máximo', tipo: 'maverick', plazas: 4, orden: 8 },
+  { codigo: 'MAV4-02', apodo: 'Espartano', tipo: 'maverick', plazas: 4, orden: 9 },
+  { codigo: 'MAV4-03', apodo: 'RS', tipo: 'maverick', plazas: 4, orden: 10 },
+  { codigo: 'MAV4-04', apodo: 'Black', tipo: 'maverick', plazas: 4, orden: 11 },
+  { codigo: 'MAV4-05', apodo: 'Gladio', tipo: 'maverick', plazas: 4, orden: 12 }
 ];
 
 export default mongoose.model('Unidad', unidadSchema);

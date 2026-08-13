@@ -83,6 +83,7 @@ router.get('/', async (req, res) => {
     // Roster completo (libres, ocupadas y de mantenimiento) para el panel
     // del dueño. No se usa en la reserva del cliente, solo en el admin.
     const todas = unidades.map(u => ({
+      numero: u.orden,
       codigo: u.codigo,
       apodo: u.apodo,
       tipo: u.tipo,
