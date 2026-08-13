@@ -28,7 +28,7 @@ router.get('/admin', authMiddleware, adminMiddleware, async (req, res) => {
 const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain', 'img'];
 
 // Categorías de las que solo existe UNA máquina física en toda la flotilla
-// (ver models/Unidad.js: Minimi es el único Commander de 2 plazas, Don Mabel
+// (ver models/Unidad.js: Minimi es el único Commander de 2 plazas, Don Mave
 // el único Maverick de 2 plazas). Si el dueño la marca ocupada en una ruta,
 // físicamente no puede estar libre en ninguna otra: hay que apagarla en
 // todas a la vez o se podría vender dos veces la misma unidad.
@@ -84,6 +84,19 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
         if (cambio.price !== undefined) {
           const precio = Number(cambio.price);
           if (Number.isFinite(precio) && precio >= 0) unidad.price = precio;
+        }
+        // Tarifas por número de personas. Se ignoran las que no caben en la
+        // unidad para que el panel no pueda vender un Commander de 4 a 6 gentes.
+        if (Array.isArray(cambio.tarifas)) {
+          const vistas = new Set();
+          unidad.tarifas = cambio.tarifas
+            .map(t => ({ personas: Number(t?.personas), precio: Number(t?.precio) }))
+            .filter(t =>
+              Number.isInteger(t.personas) && t.personas >= 1 && t.personas <= unidad.seats &&
+              Number.isFinite(t.precio) && t.precio >= 0 &&
+              !vistas.has(t.personas) && vistas.add(t.personas)
+            )
+            .sort((a, b) => a.personas - b.personas);
         }
         if (cambio.activo !== undefined) {
           const nuevoActivo = !!cambio.activo;

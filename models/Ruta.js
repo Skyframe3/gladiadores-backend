@@ -1,13 +1,21 @@
 import mongoose from 'mongoose';
 
-// Unidad dentro de una ruta: el admin puede cambiarle precio,
+// El precio es por vehículo completo y cambia según cuánta gente va:
+// un Commander con 2 personas no cuesta lo mismo que con 4.
+const tarifaSchema = new mongoose.Schema({
+  personas: { type: Number, required: true, min: 1, max: 12 },
+  precio: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
+// Unidad dentro de una ruta: el admin puede cambiarle las tarifas,
 // desactivarla completa o bloquear asientos sueltos.
 const unidadSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String, required: true },
   type: { type: String, default: '' },
   seats: { type: Number, required: true, min: 1, max: 12 },
-  price: { type: Number, required: true, min: 0 },
+  tarifas: { type: [tarifaSchema], default: [] },
+  price: { type: Number, default: 0, min: 0 },  // heredado del esquema por asiento
   booked: { type: [Number], default: [] },   // asientos bloqueados por el admin
   activo: { type: Boolean, default: true }
 }, { _id: false });
@@ -60,14 +68,24 @@ rutaSchema.methods.toPublico = function () {
     desc: this.desc,
     terrain: this.terrain,
     horarios: this.horarios.filter(h => h.activo).map(h => h.hora),
-    units: this.units.filter(u => u.activo).map(u => ({
-      id: u.id,
-      name: u.name,
-      type: u.type,
-      seats: u.seats,
-      booked: u.booked,
-      price: u.price
-    }))
+    units: this.units.filter(u => u.activo).map(u => {
+      const tarifas = (u.tarifas || [])
+        .filter(t => t.precio > 0)
+        .sort((a, b) => a.personas - b.personas);
+      return {
+        id: u.id,
+        name: u.name,
+        type: u.type,
+        seats: u.seats,
+        booked: u.booked,
+        tarifas: tarifas.map(t => ({ personas: t.personas, precio: t.precio })),
+        // precio de entrada, para el "desde $X" de la tarjeta de ruta
+        desde: tarifas.length ? tarifas[0].precio : 0,
+        // se sigue mandando para que una versión vieja del sitio, publicada
+        // antes que esta API, no se quede mostrando precios en cero
+        price: u.price
+      };
+    })
   };
 };
 

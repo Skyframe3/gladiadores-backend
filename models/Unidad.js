@@ -18,14 +18,13 @@ unidadSchema.virtual('tipoId').get(function () {
   return `${this.tipo}-${this.plazas}`;
 });
 
-// Legible para admin y cliente. El Commander de 2 plazas no lleva "Max"
-// (esa palabra es exclusiva de la versión larga), y el Maverick de 2
-// plazas es específicamente el trim X RC, no el genérico X3.
+// Legible para admin y cliente. El Commander de 2 plazas es el trim Trail;
+// "Max" es exclusivo de la versión larga. Los dos Mavericks son X3.
 unidadSchema.virtual('nombreCompleto').get(function () {
   const tipos = {
     cuatrimoto: 'Cuatrimoto',
-    maverick: this.plazas <= 2 ? 'Maverick X RC' : 'Maverick X3',
-    commander: this.plazas <= 2 ? 'Commander' : 'Commander Max'
+    maverick: 'Maverick X3',
+    commander: this.plazas <= 2 ? 'Commander Trail' : 'Commander Max'
   };
   return `${tipos[this.tipo] || this.tipo} · ${this.apodo}`;
 });
@@ -43,8 +42,7 @@ export const tipoIdLegible = (tipoId) => {
   const [tipo, plazas] = String(tipoId).split('-');
   const n = Number(plazas);
   let etiqueta = ETIQUETAS_TIPO[tipo] || tipo;
-  if (tipo === 'commander' && n <= 2) etiqueta = 'Commander';
-  if (tipo === 'maverick' && n <= 2) etiqueta = 'Maverick X RC';
+  if (tipo === 'commander' && n <= 2) etiqueta = 'Commander Trail';
   return `${etiqueta} · ${plazas} plazas`;
 };
 
@@ -66,7 +64,7 @@ export const FLOTA = [
   { codigo: 'MAV4-03', apodo: 'RS', tipo: 'maverick', plazas: 4, orden: 9 },
   { codigo: 'MAV4-04', apodo: 'Black', tipo: 'maverick', plazas: 4, orden: 10 },
   { codigo: 'MAV4-05', apodo: 'Gladio', tipo: 'maverick', plazas: 4, orden: 11 },
-  { codigo: 'MAV2-01', apodo: 'Don Mabel', tipo: 'maverick', plazas: 2, orden: 12 }
+  { codigo: 'MAV2-01', apodo: 'Don Mave', tipo: 'maverick', plazas: 2, orden: 12 }
 ];
 
 export default mongoose.model('Unidad', unidadSchema);
