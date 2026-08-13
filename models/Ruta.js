@@ -44,6 +44,7 @@ const rutaSchema = new mongoose.Schema({
   terrain: { type: [String], default: [] },
   horarios: { type: [horarioSchema], default: [] },
   units: { type: [unidadSchema], default: [] },
+  diasActivos: { type: [String], default: [] },
   activo: { type: Boolean, default: true },
   orden: { type: Number, default: 0 },
   actualizadaEn: { type: Date, default: Date.now }
@@ -67,6 +68,7 @@ rutaSchema.methods.toPublico = function () {
     dist: this.dist,
     desc: this.desc,
     terrain: this.terrain,
+    diasActivos: this.diasActivos || [],
     horarios: this.horarios.filter(h => h.activo).map(h => h.hora),
     units: this.units.filter(u => u.activo).map(u => {
       const tarifas = (u.tarifas || [])

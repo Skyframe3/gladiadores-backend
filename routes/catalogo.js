@@ -25,7 +25,7 @@ router.get('/admin', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Campos que el panel puede tocar. Lo demás se ignora.
-const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain', 'img'];
+const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain', 'img', 'diasActivos'];
 
 // Categorías de las que solo existe UNA máquina física en toda la flotilla
 // (ver models/Unidad.js: Minimi es el único Commander de 2 plazas, Don Mave
@@ -46,7 +46,15 @@ router.patch('/:rid', authMiddleware, adminMiddleware, async (req, res) => {
     if (!ruta) return res.status(404).json({ error: 'Ruta no encontrada' });
 
     for (const campo of CAMPOS_EDITABLES) {
+      if (campo === 'diasActivos') continue;
       if (req.body[campo] !== undefined) ruta[campo] = req.body[campo];
+    }
+
+    if (Array.isArray(req.body.diasActivos)) {
+      const re = /^\d{4}-\d{2}-\d{2}$/;
+      ruta.diasActivos = [...new Set(
+        req.body.diasActivos.filter(d => typeof d === 'string' && re.test(d))
+      )].sort();
     }
 
     // Galería: hasta 10 fotos, cada una una ruta o URL corta y sin caracteres raros
