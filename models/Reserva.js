@@ -53,6 +53,24 @@ const reservaSchema = new mongoose.Schema({
 // la operación más frecuente del sistema de reservas.
 reservaSchema.index({ fecha: 1, horario: 1, estado: 1 });
 
+// La misma máquina física no se puede vender dos veces el mismo día. El
+// checkeo en JS antes del save() (routes/reservas.js) tiene una rendija:
+// dos reservas casi simultáneas por la última unidad libre pueden pasar
+// las dos el checkeo antes de que cualquiera termine de guardarse. Este
+// índice lo cierra a nivel de base de datos — MongoDB rechaza el segundo
+// insert con un error de duplicado, no importa qué tan rápido lleguen.
+//
+// Parcial y filtrado por 'confirmada' (no "distinto de cancelada") porque
+// MongoDB solo admite $eq/$exists/$gt/$gte/$lt/$lte/$type en el filtro de
+// un índice parcial — $ne no es válido ahí. Toda reserva nueva nace en
+// estado 'confirmada' (routes/reservas.js nunca manda otro valor al
+// crearla), que es exactamente el estado en el que puede haber una
+// carrera entre dos POST simultáneos, así que el filtro cubre el caso real.
+reservaSchema.index(
+  { unidadCodigo: 1, fecha: 1 },
+  { unique: true, partialFilterExpression: { estado: { $eq: 'confirmada' } } }
+);
+
 reservaSchema.pre('save', function (next) {
   this.actualizadaEn = new Date();
   next();

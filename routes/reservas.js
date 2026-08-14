@@ -77,15 +77,25 @@ router.post('/', validateReserva, async (req, res) => {
       metodoPago: 'whatsapp'
     });
 
-    // Revalida justo antes de guardar: si otra persona ganó esta misma
-    // unidad en el instante entre el check de arriba y este punto, no
-    // se duplica — se vuelve a intentar con la siguiente unidad libre.
+    // Revalida justo antes de guardar: reduce la ventana de la carrera,
+    // pero no la cierra del todo (dos requests casi simultáneas pueden
+    // pasar las dos este check). Quien de verdad la cierra es el índice
+    // único parcial en el modelo — si dos reservas por la misma unidad
+    // y fecha llegan a save() casi al mismo tiempo, MongoDB deja pasar
+    // la primera y la segunda cae en el catch de abajo con error 11000.
     const ocupadasAhora = await unidadesOcupadasEnFecha(fecha);
     if (ocupadasAhora.has(libre.codigo)) {
       return res.status(409).json({ error: 'Alguien más acaba de apartar esa unidad. Intenta de nuevo.' });
     }
 
-    await reserva.save();
+    try {
+      await reserva.save();
+    } catch (dupErr) {
+      if (dupErr.code === 11000) {
+        return res.status(409).json({ error: 'Alguien más acaba de apartar esa unidad. Intenta de nuevo.' });
+      }
+      throw dupErr;
+    }
 
     // Enviar confirmación por WhatsApp en background (no espera)
     setImmediate(() => enviarConfirmacionReserva(reserva));
