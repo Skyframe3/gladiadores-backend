@@ -17,17 +17,22 @@ const reservaSchema = new mongoose.Schema({
   unidadCodigo: { type: String, index: true }, // máquina física de la flota
   horario: { type: String, required: true },
   fecha: { type: Date, required: true },
-  asientos: [Number],
-  // 'asientos' = comparte la unidad con otros; 'unidad' = la aparta completa
-  modoVenta: { type: String, enum: ['asientos', 'unidad'], default: 'asientos' },
+  // La renta es del vehículo completo; personas es solo cuántos van, no
+  // asientos individuales que se puedan vender por separado.
+  personas: { type: Number, required: true, min: 1, max: 12 },
 
   // Extras
   extras: [String],
 
-  // Pago
+  // Pago: monto es lo que se paga ahora (anticipo o total, según modoPago);
+  // montoTotal es el precio completo de la ruta, para que el panel sepa
+  // cuánto falta por cobrar cuando el cliente eligió solo anticipo.
   monto: { type: Number, required: true },
+  montoTotal: { type: Number, required: true },
   modoPago: { type: String, enum: ['anticipo', 'completo'], default: 'anticipo' },
-  metodoPago: { type: String, enum: ['mercadopago'], default: 'mercadopago' },
+  // 'whatsapp' = solicitud manual (hoy); 'mercadopago' = cuando se conecte
+  // la pasarela y el cobro quede automatizado.
+  metodoPago: { type: String, enum: ['whatsapp', 'mercadopago'], default: 'whatsapp' },
   estadoPago: { type: String, enum: ['pendiente', 'pagado', 'reembolsado'], default: 'pendiente' },
   mpPaymentId: { type: String, index: true }, // ID de transacción en Mercado Pago
   mpPreferenceId: { type: String }, // ID de preferencia/checkout en Mercado Pago

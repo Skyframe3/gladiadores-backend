@@ -14,7 +14,7 @@ const sanitizeString = (str) => {
 const CATEGORIAS_VALIDAS = ['cuatrimoto-2', 'commander-2', 'commander-4', 'maverick-2', 'maverick-4'];
 
 export const validateReserva = (req, res, next) => {
-  const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, asientos, monto } = req.body;
+  const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, modoPago } = req.body;
 
   // Validar nombre (permitir solo letras, números, espacios, acentos, guiones)
   const nombreRegex = /^[a-záéíóúñ\s\-']{2,100}$/i;
@@ -66,15 +66,19 @@ export const validateReserva = (req, res, next) => {
     return res.status(400).json({ error: 'fecha: debe ser una fecha futura válida' });
   }
 
-  // Validar asientos (array de números, mínimo 1, máximo 20)
-  if (!Array.isArray(asientos) || asientos.length === 0 || asientos.length > 20 || !asientos.every(n => Number.isInteger(n) && n > 0 && n <= 100)) {
-    return res.status(400).json({ error: 'asientos: debe ser array de 1-20 números positivos' });
+  // Validar personas (cuántos van en el vehículo, no asientos sueltos)
+  if (!Number.isInteger(personas) || personas < 1 || personas > 12) {
+    return res.status(400).json({ error: 'personas: debe ser un número entero de 1 a 12' });
   }
 
-  // Validar monto (número positivo, máximo razonable $50,000)
-  if (typeof monto !== 'number' || monto <= 0 || monto > 50000) {
-    return res.status(400).json({ error: 'monto: debe estar entre $1 y $50,000' });
+  // Validar modoPago
+  if (modoPago !== undefined && !['anticipo', 'completo'].includes(modoPago)) {
+    return res.status(400).json({ error: 'modoPago: debe ser "anticipo" o "completo"' });
   }
+
+  // El precio (monto y montoTotal) no se valida aquí: el servidor lo calcula
+  // él mismo a partir de la tarifa real de la ruta, nunca confía en lo que
+  // mande el cliente. Ver routes/reservas.js.
 
   next();
 };

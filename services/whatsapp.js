@@ -13,14 +13,18 @@ export async function enviarConfirmacionReserva(reserva) {
 
   try {
     const fecha = new Date(reserva.fecha).toLocaleDateString('es-MX');
+    const pago = reserva.modoPago === 'completo'
+      ? `*Pagado:* $${reserva.monto} MXN (completo)`
+      : `*Anticipo:* $${reserva.monto} MXN · *Resto en la ruta:* $${reserva.montoTotal - reserva.monto} MXN`;
     const mensaje = `✅ *Reserva Confirmada*
 
-*Folio:* GOR-${String(reserva._id).slice(-4).toUpperCase()}
+*Folio:* ${reserva.folio}
 *Ruta:* ${reserva.ruta}
 *Fecha:* ${fecha}
 *Horario:* ${reserva.horario}
-*Asientos:* ${reserva.asientos.join(', ')}
-*Monto:* $${reserva.monto} MXN
+*Unidad:* ${reserva.unidad}
+*Personas:* ${reserva.personas}
+${pago}
 
 ¡Te esperamos en Chignahuapan! 🏜️
 

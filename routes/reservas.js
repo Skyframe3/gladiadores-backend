@@ -20,15 +20,29 @@ const router = express.Router();
 // qué ruta se haya reservado.
 router.post('/', validateReserva, async (req, res) => {
   try {
-    const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, asientos, extras, monto, modoPago, metodoPago } = req.body;
+    const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, extras, modoPago } = req.body;
 
     const rutaObj = await Ruta.findOne({ rid: rutaId, activo: true });
     if (!rutaObj) return res.status(404).json({ error: 'Esa ruta ya no está disponible' });
+
+    if (Array.isArray(rutaObj.diasActivos) && rutaObj.diasActivos.length > 0 && !rutaObj.diasActivos.includes(fecha)) {
+      return res.status(409).json({ error: 'Esa fecha no está disponible para esta ruta' });
+    }
 
     const categoria = rutaObj.units.find(u => u.id === categoriaId);
     if (!categoria || !categoria.activo) {
       return res.status(409).json({ error: 'Esa unidad ya no se ofrece en esta ruta' });
     }
+
+    // El precio es el que el dueño puso en el panel para esa unidad y ese
+    // número de personas, nunca el que mande el cliente: así nadie puede
+    // reservar un Maverick de $5800 pagando lo que quiera.
+    const tarifa = (categoria.tarifas || []).find(t => t.personas === personas && t.precio > 0);
+    if (!tarifa) {
+      return res.status(409).json({ error: 'Esa unidad no tiene tarifa para esa cantidad de personas' });
+    }
+    const montoTotal = tarifa.precio;
+    const monto = modoPago === 'completo' ? montoTotal : Math.round(montoTotal * 0.25);
 
     const ocupadas = await unidadesOcupadasEnFecha(fecha);
     const libre = await Unidad.findOne({
@@ -55,11 +69,12 @@ router.post('/', validateReserva, async (req, res) => {
       unidadCodigo: libre.codigo,
       horario,
       fecha: new Date(fecha),
-      asientos,
+      personas,
       extras: extras || [],
       monto,
+      montoTotal,
       modoPago: modoPago || 'anticipo',
-      metodoPago: metodoPago || 'mercadopago'
+      metodoPago: 'whatsapp'
     });
 
     // Revalida justo antes de guardar: si otra persona ganó esta misma
@@ -79,7 +94,10 @@ router.post('/', validateReserva, async (req, res) => {
       ok: true,
       folio: reserva.folio,
       unidad: libre.nombreCompleto,
-      mensaje: `Reserva ${folio} creada. Revisa tu WhatsApp para confirmar el pago.`
+      monto,
+      montoTotal,
+      modoPago: reserva.modoPago,
+      mensaje: `Reserva ${folio} creada.`
     });
   } catch (err) {
     console.error('Error al crear reserva:', err);
