@@ -1,5 +1,7 @@
-// Activa todos los sábados y domingos del resto de 2026 en las 9 rutas
-// que tienen flyer. Idempotente: no duplica fechas que ya existan.
+// Activa todos los sábados y domingos desde hoy hasta el final de 2027 en
+// las 9 rutas que tienen flyer. Idempotente: no duplica fechas que ya
+// existan, así que correrlo de nuevo más adelante (para extender a 2028,
+// por ejemplo) solo agrega lo que falte.
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import Ruta from '../models/Ruta.js';
@@ -7,13 +9,13 @@ import Ruta from '../models/Ruta.js';
 dotenv.config();
 
 const CON_FLYER = [1, 2, 3, 4, 5, 6, 7, 8, 10];
+const HASTA = new Date(2027, 11, 31);
 
-function finesDeSemana2026() {
+function finesDeSemana(hasta) {
   const fechas = [];
   const hoy = new Date();
   const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-  const fin = new Date(2026, 11, 31);
-  while (d <= fin) {
+  while (d <= hasta) {
     const dow = d.getDay();
     if (dow === 0 || dow === 6) {
       const iso = d.toISOString().slice(0, 10);
@@ -28,8 +30,8 @@ async function activar() {
   await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 30000 });
   console.log('Conectado a MongoDB\n');
 
-  const fines = finesDeSemana2026();
-  console.log(`Fines de semana del resto de 2026: ${fines.length} días`);
+  const fines = finesDeSemana(HASTA);
+  console.log(`Fines de semana desde hoy hasta el ${HASTA.toISOString().slice(0, 10)}: ${fines.length} días`);
   console.log(`  Desde ${fines[0]} hasta ${fines[fines.length - 1]}\n`);
 
   let tocadas = 0;
