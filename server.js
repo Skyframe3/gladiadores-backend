@@ -14,6 +14,7 @@ import chatbotRouter from './routes/chatbot.js';
 import agenteRouter from './routes/agente.js';
 import uploadRouter from './routes/upload.js';
 import promosRouter from './routes/promos.js';
+import configRouter from './routes/config.js';
 import { authMiddleware, adminMiddleware } from './middleware/auth.js';
 
 dotenv.config();
@@ -181,6 +182,7 @@ app.use('/api/chatbot', chatbotRouter);
 app.use('/api/admin/agente', agenteRouter);
 app.use('/api/admin/upload', uploadRouter);
 app.use('/api/admin/promos', promosRouter);
+app.use('/api/config', configRouter);
 
 // 404
 app.use((req, res) => {
