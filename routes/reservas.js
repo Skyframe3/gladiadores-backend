@@ -19,12 +19,21 @@ const router = express.Router();
 // reales de esa categoría siguen libres ese día. Así una sola máquina
 // nunca puede quedar vendida dos veces el mismo día, sin importar en
 // qué ruta se haya reservado.
-router.post('/', validateReserva, async (req, res) => {
+// Antes que nada, incluso antes de validar los datos: si las reservas
+// están pausadas, cualquiera que le pegue a este endpoint (con datos
+// buenos o mal formados) ve el mismo aviso, no un error de validación.
+router.post('/', async (req, res, next) => {
   try {
     const config = await SiteConfig.obtener();
     if (config.reservasPausadas) {
       return res.status(503).json({ error: 'Estamos afinando el pago en línea. Muy pronto podrás reservar aquí mismo.' });
     }
+    next();
+  } catch (err) {
+    next(); // si falla la consulta, sigue al flujo normal (que valida y falla seguro)
+  }
+}, validateReserva, async (req, res) => {
+  try {
 
     const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, extras, modoPago } = req.body;
 
