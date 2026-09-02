@@ -7,6 +7,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 import { validateReserva, validateEstado } from '../middleware/validation.js';
 import { enviarConfirmacionReserva } from '../services/whatsapp.js';
 import { unidadesOcupadasEnFecha } from './disponibilidad.js';
+import SiteConfig from '../models/SiteConfig.js';
 
 const router = express.Router();
 
@@ -20,6 +21,11 @@ const router = express.Router();
 // qué ruta se haya reservado.
 router.post('/', validateReserva, async (req, res) => {
   try {
+    const config = await SiteConfig.obtener();
+    if (config.reservasPausadas) {
+      return res.status(503).json({ error: 'Estamos afinando el pago en línea. Muy pronto podrás reservar aquí mismo.' });
+    }
+
     const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, extras, modoPago } = req.body;
 
     const rutaObj = await Ruta.findOne({ rid: rutaId, activo: true });
