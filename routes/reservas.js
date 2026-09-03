@@ -35,7 +35,7 @@ router.post('/', async (req, res, next) => {
 }, validateReserva, async (req, res) => {
   try {
 
-    const { nombre, email, whatsapp, ruta, rutaId, horario, fecha, extras, modoPago, nota } = req.body;
+    const { nombre, email, whatsapp, ciudad, ruta, rutaId, horario, fecha, extras, modoPago, nota } = req.body;
     // unidades: [{categoriaId:'maverick-4', personas:4}, {categoriaId:'cuatrimoto-2', personas:2}, ...]
     const pedidas = Array.isArray(req.body.unidades) ? req.body.unidades : [];
 
@@ -96,7 +96,7 @@ router.post('/', async (req, res, next) => {
 
     const reserva = new Reserva({
       folio,
-      cliente: { nombre, email, whatsapp },
+      cliente: { nombre, email, whatsapp, ciudad: (ciudad || '').slice(0, 80) },
       ruta,
       rutaId,
       horario,
