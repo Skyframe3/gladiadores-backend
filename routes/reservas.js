@@ -3,7 +3,7 @@ import Counter from '../models/Counter.js';
 import Reserva from '../models/Reserva.js';
 import Ruta from '../models/Ruta.js';
 import Unidad from '../models/Unidad.js';
-import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
+import { authMiddleware, adminMiddleware, reservasMiddleware } from '../middleware/auth.js';
 import { validateReserva, validateEstado } from '../middleware/validation.js';
 import { enviarConfirmacionReserva } from '../services/whatsapp.js';
 import { unidadesOcupadasEnFecha } from './disponibilidad.js';
@@ -35,7 +35,12 @@ router.post('/', async (req, res, next) => {
 }, validateReserva, async (req, res) => {
   try {
 
-    const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, extras, modoPago } = req.body;
+    const { nombre, email, whatsapp, ruta, rutaId, horario, fecha, extras, modoPago, nota } = req.body;
+    // unidades: [{categoriaId:'maverick-4', personas:4}, {categoriaId:'cuatrimoto-2', personas:2}, ...]
+    const pedidas = Array.isArray(req.body.unidades) ? req.body.unidades : [];
+
+    if (!pedidas.length) return res.status(400).json({ error: 'Elige al menos una unidad' });
+    if (pedidas.length > 8) return res.status(400).json({ error: 'Máximo 8 unidades por reserva' });
 
     const rutaObj = await Ruta.findOne({ rid: rutaId, activo: true });
     if (!rutaObj) return res.status(404).json({ error: 'Esa ruta ya no está disponible' });
@@ -44,85 +49,98 @@ router.post('/', async (req, res, next) => {
       return res.status(409).json({ error: 'Esa fecha no está disponible para esta ruta' });
     }
 
-    const categoria = rutaObj.units.find(u => u.id === categoriaId);
-    if (!categoria || !categoria.activo) {
-      return res.status(409).json({ error: 'Esa unidad ya no se ofrece en esta ruta' });
+    // El precio SIEMPRE sale del catálogo del panel, nunca del cliente:
+    // así nadie puede mandar un Maverick de $5,800 con precio inventado.
+    const renglones = [];
+    let montoTotal = 0;
+    let personasTotal = 0;
+
+    for (const p of pedidas) {
+      const categoria = rutaObj.units.find(u => u.id === p.categoriaId);
+      if (!categoria || !categoria.activo) {
+        return res.status(409).json({ error: 'Una de las unidades ya no se ofrece en esta ruta' });
+      }
+      const personas = Number(p.personas);
+      const tarifa = (categoria.tarifas || []).find(t => t.personas === personas && t.precio > 0);
+      if (!tarifa) {
+        return res.status(409).json({ error: `${categoria.name}: no hay tarifa para ${p.personas} personas` });
+      }
+      renglones.push({ categoriaId: categoria.id, nombre: categoria.name, personas, precio: tarifa.precio });
+      montoTotal += tarifa.precio;
+      personasTotal += personas;
     }
 
-    // El precio es el que el dueño puso en el panel para esa unidad y ese
-    // número de personas, nunca el que mande el cliente: así nadie puede
-    // reservar un Maverick de $5800 pagando lo que quiera.
-    const tarifa = (categoria.tarifas || []).find(t => t.personas === personas && t.precio > 0);
-    if (!tarifa) {
-      return res.status(409).json({ error: 'Esa unidad no tiene tarifa para esa cantidad de personas' });
-    }
-    const montoTotal = tarifa.precio;
-    const monto = modoPago === 'completo' ? montoTotal : Math.round(montoTotal * 0.25);
-
+    // Asignar máquinas físicas concretas, sin repetir dentro de la misma
+    // reserva: si piden 2 cuatrimotos, se apartan dos distintas.
     const ocupadas = await unidadesOcupadasEnFecha(fecha);
-    const libre = await Unidad.findOne({
-      tipo: categoria.id.split('-')[0],
-      plazas: Number(categoria.id.split('-')[1]),
-      activo: true,
-      codigo: { $nin: Array.from(ocupadas) }
-    }).sort({ orden: 1 });
+    const yaAsignadas = new Set();
 
-    if (!libre) {
-      return res.status(409).json({ error: 'Ya no hay unidades disponibles para esa fecha. Elige otra fecha u otra unidad.' });
+    for (const r of renglones) {
+      const [tipo, plazas] = r.categoriaId.split('-');
+      const libre = await Unidad.findOne({
+        tipo,
+        plazas: Number(plazas),
+        activo: true,
+        codigo: { $nin: [...Array.from(ocupadas), ...Array.from(yaAsignadas)] }
+      }).sort({ orden: 1 });
+
+      if (!libre) {
+        return res.status(409).json({ error: `Ya no hay ${r.nombre} disponible para esa fecha. Ajusta tu selección.` });
+      }
+      r.codigo = libre.codigo;
+      r.nombre = libre.nombreCompleto;
+      yaAsignadas.add(libre.codigo);
     }
 
-    // Generar folio secuencial
     const folio = await Counter.getNextFolio();
 
-    // Crear reserva
     const reserva = new Reserva({
       folio,
       cliente: { nombre, email, whatsapp },
       ruta,
       rutaId,
-      unidad: libre.nombreCompleto,
-      unidadCodigo: libre.codigo,
       horario,
       fecha: new Date(fecha),
-      personas,
+      unidades: renglones,
+      personas: personasTotal,
       extras: extras || [],
-      monto,
+      nota: (nota || '').slice(0, 600),
       montoTotal,
+      montoPagado: 0,
       modoPago: modoPago || 'anticipo',
-      metodoPago: 'whatsapp'
+      metodoPago: 'transferencia',
+      estadoPago: 'pendiente',
+      estado: 'pendiente'
     });
 
-    // Revalida justo antes de guardar: reduce la ventana de la carrera,
-    // pero no la cierra del todo (dos requests casi simultáneas pueden
-    // pasar las dos este check). Quien de verdad la cierra es el índice
-    // único parcial en el modelo — si dos reservas por la misma unidad
-    // y fecha llegan a save() casi al mismo tiempo, MongoDB deja pasar
-    // la primera y la segunda cae en el catch de abajo con error 11000.
+    // Revalida justo antes de guardar: acorta la ventana de carrera, pero
+    // quien de verdad la cierra es el índice único del modelo (error 11000).
     const ocupadasAhora = await unidadesOcupadasEnFecha(fecha);
-    if (ocupadasAhora.has(libre.codigo)) {
-      return res.status(409).json({ error: 'Alguien más acaba de apartar esa unidad. Intenta de nuevo.' });
+    if (renglones.some(r => ocupadasAhora.has(r.codigo))) {
+      return res.status(409).json({ error: 'Alguien más acaba de apartar una de esas unidades. Intenta de nuevo.' });
     }
 
     try {
       await reserva.save();
     } catch (dupErr) {
       if (dupErr.code === 11000) {
-        return res.status(409).json({ error: 'Alguien más acaba de apartar esa unidad. Intenta de nuevo.' });
+        return res.status(409).json({ error: 'Alguien más acaba de apartar una de esas unidades. Intenta de nuevo.' });
       }
       throw dupErr;
     }
 
-    // Enviar confirmación por WhatsApp en background (no espera)
     setImmediate(() => enviarConfirmacionReserva(reserva));
 
+    const anticipo = Math.round(montoTotal * 0.25);
     res.status(201).json({
       ok: true,
       folio: reserva.folio,
-      unidad: libre.nombreCompleto,
-      monto,
+      unidades: renglones.map(r => ({ nombre: r.nombre, personas: r.personas, precio: r.precio })),
       montoTotal,
+      anticipo,
       modoPago: reserva.modoPago,
-      mensaje: `Reserva ${folio} creada.`
+      estado: reserva.estado,
+      mensaje: `Solicitud ${folio} recibida. Queda apartada mientras se valida tu transferencia.`
     });
   } catch (err) {
     console.error('Error al crear reserva:', err);
@@ -131,7 +149,7 @@ router.post('/', async (req, res, next) => {
 });
 
 // GET /api/reservas — Listar todas las reservas (admin solamente)
-router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
+router.get('/', authMiddleware, reservasMiddleware, async (req, res) => {
   try {
     const reservas = await Reserva.find().sort({ creadaEn: -1 });
     res.json({ ok: true, total: reservas.length, reservas });
@@ -155,8 +173,39 @@ router.get('/:folio', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/reservas/:folio/pago — Registrar que llegó la transferencia.
+// Al aprobar, la reserva pasa a 'confirmada' y queda el rastro de quién
+// la aprobó: es el momento en que el lugar deja de ser tentativo.
+router.patch('/:folio/pago', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const reserva = await Reserva.findOne({ folio: req.params.folio });
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+
+    const monto = Number(req.body.montoPagado);
+    if (!Number.isFinite(monto) || monto < 0 || monto > reserva.montoTotal) {
+      return res.status(400).json({ error: `El monto debe estar entre 0 y ${reserva.montoTotal}` });
+    }
+
+    reserva.montoPagado = monto;
+    reserva.estadoPago = monto <= 0 ? 'pendiente' : (monto >= reserva.montoTotal ? 'pagado' : 'anticipo');
+
+    // Con dinero encima, la reserva deja de ser una solicitud y se confirma.
+    if (monto > 0 && reserva.estado === 'pendiente') {
+      reserva.estado = 'confirmada';
+      reserva.aprobadaPor = req.user.email;
+      reserva.aprobadaEn = new Date();
+    }
+
+    await reserva.save();
+    res.json({ ok: true, reserva, mensaje: `Pago registrado: $${monto} de $${reserva.montoTotal}` });
+  } catch (err) {
+    console.error('Error al registrar pago:', err.message);
+    res.status(500).json({ error: 'Error al registrar el pago' });
+  }
+});
+
 // PATCH /api/reservas/:folio/estado — Cambiar estado (admin solamente)
-router.patch('/:folio/estado', authMiddleware, adminMiddleware, validateEstado, async (req, res) => {
+router.patch('/:folio/estado', authMiddleware, reservasMiddleware, validateEstado, async (req, res) => {
   try {
     const folio = String(req.params.folio).toUpperCase().trim();
     if (!/^GOR-\d{4}$/.test(folio)) {

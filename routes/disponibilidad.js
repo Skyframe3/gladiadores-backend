@@ -11,11 +11,14 @@ const router = express.Router();
 export async function unidadesOcupadasEnFecha(fecha) {
   const inicio = new Date(fecha + 'T00:00:00Z');
   const fin = new Date(inicio.getTime() + 86400000);
+  // 'pausada' también aparta: la reserva sigue viva, solo está en espera.
   const reservas = await Reserva.find({
     fecha: { $gte: inicio, $lt: fin },
-    estado: { $ne: 'cancelada' }
-  });
-  return new Set(reservas.map(r => r.unidadCodigo).filter(Boolean));
+    estado: { $in: ['pendiente', 'confirmada', 'pausada'] }
+  }).select('unidades.codigo');
+  const ocupadas = new Set();
+  reservas.forEach(r => (r.unidades || []).forEach(u => u.codigo && ocupadas.add(u.codigo)));
+  return ocupadas;
 }
 
 // GET /api/disponibilidad?fecha=2026-08-10&hora=09:00&ruta=1 (ruta es opcional)
@@ -37,11 +40,13 @@ router.get('/', async (req, res) => {
     const fin = new Date(inicio.getTime() + 86400000);
     const reservasDelDia = await Reserva.find({
       fecha: { $gte: inicio, $lt: fin },
-      estado: { $ne: 'cancelada' }
-    }).select('unidadCodigo folio ruta horario cliente.nombre');
+      estado: { $in: ['pendiente', 'confirmada', 'pausada'] }
+    }).select('unidades folio ruta horario estado cliente.nombre');
     const detallePorCodigo = {};
     reservasDelDia.forEach(r => {
-      if (r.unidadCodigo) detallePorCodigo[r.unidadCodigo] = { folio: r.folio, ruta: r.ruta, horario: r.horario, cliente: r.cliente?.nombre };
+      (r.unidades || []).forEach(u => {
+        if (u.codigo) detallePorCodigo[u.codigo] = { folio: r.folio, ruta: r.ruta, horario: r.horario, estado: r.estado, cliente: r.cliente?.nombre };
+      });
     });
     const ocupadas = new Set(Object.keys(detallePorCodigo));
     const unidades = await Unidad.find().sort({ orden: 1 });

@@ -5,7 +5,7 @@ const adminSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true, lowercase: true },
   passwordHash: { type: String, required: true },
   nombre: { type: String, required: true },
-  rol: { type: String, enum: ['owner', 'manager'], default: 'manager' },
+  rol: { type: String, enum: ['owner', 'manager', 'staff'], default: 'manager' },
   activo: { type: Boolean, default: true },
 
   // Segundo factor (TOTP, compatible con Google Authenticator y Authy).

@@ -85,7 +85,7 @@ export const validateReserva = (req, res, next) => {
 
 export const validateEstado = (req, res, next) => {
   const { estado } = req.body;
-  const validos = ['confirmada', 'cancelada', 'completada', 'no_show'];
+  const validos = ['pendiente', 'confirmada', 'completada', 'pausada', 'cancelada'];
 
   if (!estado || !validos.includes(estado)) {
     return res.status(400).json({ error: `estado: debe ser uno de ${validos.join(', ')}` });

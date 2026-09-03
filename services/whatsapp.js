@@ -13,20 +13,21 @@ export async function enviarConfirmacionReserva(reserva) {
 
   try {
     const fecha = new Date(reserva.fecha).toLocaleDateString('es-MX');
+    const anticipo = Math.round(reserva.montoTotal * 0.25);
     const pago = reserva.modoPago === 'completo'
-      ? `*Pagado:* $${reserva.monto} MXN (completo)`
-      : `*Anticipo:* $${reserva.monto} MXN · *Resto en la ruta:* $${reserva.montoTotal - reserva.monto} MXN`;
-    const mensaje = `✅ *Reserva Confirmada*
+      ? `*Total a pagar:* $${reserva.montoTotal} MXN (pago completo)`
+      : `*Anticipo:* $${anticipo} MXN · *Resto en la ruta:* $${reserva.montoTotal - anticipo} MXN`;
+    const mensaje = `📋 *Solicitud de reserva recibida*
 
 *Folio:* ${reserva.folio}
 *Ruta:* ${reserva.ruta}
 *Fecha:* ${fecha}
 *Horario:* ${reserva.horario}
-*Unidad:* ${reserva.unidad}
+*Unidades:* ${(reserva.unidades || []).map(u => `${u.nombre} (${u.personas}p)`).join(", ")}
 *Personas:* ${reserva.personas}
 ${pago}
 
-¡Te esperamos en Chignahuapan! 🏜️
+Tu lugar queda apartado en cuanto validemos tu transferencia.\n\n¡Te esperamos en Chignahuapan!
 
 Para más info: +52 797 100 1929`;
 

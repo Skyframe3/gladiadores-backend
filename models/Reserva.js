@@ -1,79 +1,89 @@
 import mongoose from 'mongoose';
 
+// Una reserva puede llevar VARIAS máquinas (ej. 2 cuatrimotos + 1 Maverick).
+// Cada renglón es una máquina física concreta de la flota, asignada por el
+// servidor al momento de reservar.
+const unidadReservadaSchema = new mongoose.Schema({
+  categoriaId: { type: String, required: true },  // 'maverick-4'
+  nombre: { type: String, required: true },       // 'Maverick X3 MAX'
+  codigo: { type: String, required: true },       // 'MAV4-01' — máquina real
+  personas: { type: Number, required: true, min: 1, max: 12 },
+  precio: { type: Number, required: true, min: 0 }
+}, { _id: false });
+
 const reservaSchema = new mongoose.Schema({
   folio: { type: String, unique: true, required: true },
 
-  // Datos del cliente
   cliente: {
     nombre: { type: String, required: true },
     email: { type: String, required: true },
     whatsapp: { type: String, required: true }
   },
 
-  // Datos de la ruta
   ruta: { type: String, required: true },
-  rutaId: { type: Number, index: true },       // rid de la ruta reservada
-  unidad: { type: String, required: true },    // nombre legible
-  unidadCodigo: { type: String, index: true }, // máquina física de la flota
+  rutaId: { type: Number, index: true },
   horario: { type: String, required: true },
   fecha: { type: Date, required: true },
-  // La renta es del vehículo completo; personas es solo cuántos van, no
-  // asientos individuales que se puedan vender por separado.
-  personas: { type: Number, required: true, min: 1, max: 12 },
 
-  // Extras
+  unidades: { type: [unidadReservadaSchema], required: true, validate: v => v.length > 0 },
+  personas: { type: Number, required: true, min: 1 },   // suma de todas las unidades
+
   extras: [String],
+  nota: { type: String, default: '', maxlength: 600 },
 
-  // Pago: monto es lo que se paga ahora (anticipo o total, según modoPago);
-  // montoTotal es el precio completo de la ruta, para que el panel sepa
-  // cuánto falta por cobrar cuando el cliente eligió solo anticipo.
-  monto: { type: Number, required: true },
+  // montoTotal = precio completo. montoPagado = lo que ya entró (lo va
+  // marcando el panel conforme llegan transferencias), para que quien
+  // atiende sepa de un vistazo cuánto falta por cobrar.
   montoTotal: { type: Number, required: true },
+  montoPagado: { type: Number, default: 0 },
   modoPago: { type: String, enum: ['anticipo', 'completo'], default: 'anticipo' },
-  // 'whatsapp' = solicitud manual (hoy); 'mercadopago' = cuando se conecte
-  // la pasarela y el cobro quede automatizado.
-  metodoPago: { type: String, enum: ['whatsapp', 'mercadopago'], default: 'whatsapp' },
-  estadoPago: { type: String, enum: ['pendiente', 'pagado', 'reembolsado'], default: 'pendiente' },
-  mpPaymentId: { type: String, index: true }, // ID de transacción en Mercado Pago
-  mpPreferenceId: { type: String }, // ID de preferencia/checkout en Mercado Pago
+  metodoPago: { type: String, enum: ['transferencia', 'efectivo'], default: 'transferencia' },
+  estadoPago: { type: String, enum: ['pendiente', 'anticipo', 'pagado'], default: 'pendiente' },
 
-  // Estado de la reserva
-  estado: { type: String, enum: ['confirmada', 'cancelada', 'completada', 'no_show'], default: 'confirmada' },
+  // pendiente  = la mandó el cliente, falta que llegue la transferencia
+  // confirmada = ya se recibió el pago y el lugar está apartado en firme
+  // completada = la ruta ya se hizo
+  // pausada    = en espera por algo (clima, cliente pidió mover fecha)
+  // cancelada  = no va; libera las unidades
+  estado: { type: String, enum: ['pendiente', 'confirmada', 'completada', 'pausada', 'cancelada'], default: 'pendiente', index: true },
 
-  // Notificaciones
+  // Quién y cuándo aprobó el pago, para tener rastro.
+  aprobadaPor: { type: String, default: '' },
+  aprobadaEn: { type: Date },
+
   whatsappEnviado: { type: Boolean, default: false },
   emailEnviado: { type: Boolean, default: false },
 
-  // Timestamps
   creadaEn: { type: Date, default: Date.now },
   actualizadaEn: { type: Date, default: Date.now }
 });
 
-// Consultar qué unidades están ocupadas en una fecha y horario es
-// la operación más frecuente del sistema de reservas.
 reservaSchema.index({ fecha: 1, horario: 1, estado: 1 });
 
-// La misma máquina física no se puede vender dos veces el mismo día. El
-// checkeo en JS antes del save() (routes/reservas.js) tiene una rendija:
-// dos reservas casi simultáneas por la última unidad libre pueden pasar
-// las dos el checkeo antes de que cualquiera termine de guardarse. Este
-// índice lo cierra a nivel de base de datos — MongoDB rechaza el segundo
-// insert con un error de duplicado, no importa qué tan rápido lleguen.
+// La misma máquina física no se puede vender dos veces el mismo día.
+// Índice multiclave sobre el arreglo: Mongo indexa cada unidad por
+// separado, así que el unique aplica máquina por máquina.
 //
-// Parcial y filtrado por 'confirmada' (no "distinto de cancelada") porque
-// MongoDB solo admite $eq/$exists/$gt/$gte/$lt/$lte/$type en el filtro de
-// un índice parcial — $ne no es válido ahí. Toda reserva nueva nace en
-// estado 'confirmada' (routes/reservas.js nunca manda otro valor al
-// crearla), que es exactamente el estado en el que puede haber una
-// carrera entre dos POST simultáneos, así que el filtro cubre el caso real.
+// El filtro parcial incluye 'pendiente' a propósito: una reserva recién
+// mandada todavía no está pagada, pero ya debe apartar la máquina — si no,
+// dos personas podrían reservar el mismo Maverick mientras ambas esperan
+// que se valide su transferencia. Al cancelar, la unidad se libera sola.
 reservaSchema.index(
-  { unidadCodigo: 1, fecha: 1 },
-  { unique: true, partialFilterExpression: { estado: { $eq: 'confirmada' } } }
+  { 'unidades.codigo': 1, fecha: 1 },
+  { unique: true, partialFilterExpression: { estado: { $in: ['pendiente', 'confirmada'] } } }
 );
 
 reservaSchema.pre('save', function (next) {
   this.actualizadaEn = new Date();
   next();
 });
+
+// Lo que le falta por pagar al cliente.
+reservaSchema.virtual('saldo').get(function () {
+  return Math.max(0, (this.montoTotal || 0) - (this.montoPagado || 0));
+});
+
+reservaSchema.set('toJSON', { virtuals: true });
+reservaSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model('Reserva', reservaSchema);
