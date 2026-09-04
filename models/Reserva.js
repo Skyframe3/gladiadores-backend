@@ -17,10 +17,7 @@ const reservaSchema = new mongoose.Schema({
   cliente: {
     nombre: { type: String, required: true },
     email: { type: String, required: true },
-    whatsapp: { type: String, required: true },
-    // De dónde viene: sirve para saber a qué ciudades vale la pena
-    // anunciarse y de dónde llega la gente que más gasta.
-    ciudad: { type: String, default: '', maxlength: 80 }
+    whatsapp: { type: String, required: true }
   },
 
   ruta: { type: String, required: true },
