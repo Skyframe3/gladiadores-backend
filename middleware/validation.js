@@ -14,7 +14,7 @@ const sanitizeString = (str) => {
 const CATEGORIAS_VALIDAS = ['cuatrimoto-2', 'commander-2', 'commander-4', 'maverick-2', 'maverick-4'];
 
 export const validateReserva = (req, res, next) => {
-  const { nombre, email, whatsapp, ruta, rutaId, categoriaId, horario, fecha, personas, modoPago } = req.body;
+  const { nombre, email, whatsapp, ruta, rutaId, unidades, horario, fecha, modoPago } = req.body;
 
   // Validar nombre (permitir solo letras, números, espacios, acentos, guiones)
   const nombreRegex = /^[a-záéíóúñ\s\-']{2,100}$/i;
@@ -47,10 +47,22 @@ export const validateReserva = (req, res, next) => {
     return res.status(400).json({ error: 'rutaId: requerido' });
   }
 
-  // categoriaId decide qué tipo de máquina se le va a asignar. El precio y
-  // la unidad exacta (apodo) los calcula el servidor, nunca vienen del cliente.
-  if (!categoriaId || !CATEGORIAS_VALIDAS.includes(categoriaId)) {
-    return res.status(400).json({ error: `categoriaId: debe ser una de ${CATEGORIAS_VALIDAS.join(', ')}` });
+  // Una reserva lleva una o varias unidades. De cada una solo se acepta
+  // qué CATEGORÍA quiere y cuántos van: el precio y qué máquina concreta
+  // le toca los decide el servidor, nunca vienen del cliente.
+  if (!Array.isArray(unidades) || unidades.length === 0) {
+    return res.status(400).json({ error: 'unidades: elige al menos una unidad' });
+  }
+  if (unidades.length > 8) {
+    return res.status(400).json({ error: 'unidades: máximo 8 por reserva' });
+  }
+  for (const u of unidades) {
+    if (!u || !CATEGORIAS_VALIDAS.includes(u.categoriaId)) {
+      return res.status(400).json({ error: `unidades: categoría inválida (debe ser una de ${CATEGORIAS_VALIDAS.join(', ')})` });
+    }
+    if (!Number.isInteger(u.personas) || u.personas < 1 || u.personas > 12) {
+      return res.status(400).json({ error: 'unidades: personas debe ser un entero de 1 a 12' });
+    }
   }
 
   // Validar horario (formato HH:MM)
@@ -64,11 +76,6 @@ export const validateReserva = (req, res, next) => {
   const now = new Date();
   if (isNaN(fechaObj.getTime()) || fechaObj < now) {
     return res.status(400).json({ error: 'fecha: debe ser una fecha futura válida' });
-  }
-
-  // Validar personas (cuántos van en el vehículo, no asientos sueltos)
-  if (!Number.isInteger(personas) || personas < 1 || personas > 12) {
-    return res.status(400).json({ error: 'personas: debe ser un número entero de 1 a 12' });
   }
 
   // Validar modoPago
