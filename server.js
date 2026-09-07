@@ -36,10 +36,24 @@ app.use(cors({
   credentials: true
 }));
 
+// Detrás de Cloudflare + Vercel, req.ip es la IP del proxy, no la del
+// visitante: sin esto TODOS compartirían el mismo contador y el sitio se
+// bloquearía solo con unas cuantas visitas. Cloudflare pone la IP real en
+// cf-connecting-ip y la sobrescribe siempre, así que no se puede falsear.
+app.set('trust proxy', 1);
+const porVisitante = (req) => {
+  const cf = req.headers['cf-connecting-ip'];
+  if (cf) return String(cf);
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.ip || 'desconocido';
+};
+
 // Rate limiting: prevenir abuso
 const limiter = rateLimit({
+  keyGenerator: porVisitante,
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por IP
+  max: 400, // por visitante real, no por proxy
   message: { error: 'Demasiadas solicitudes, intenta más tarde.' },
   standardHeaders: true,
   legacyHeaders: false
@@ -48,8 +62,9 @@ app.use('/api/', limiter);
 
 // Más estricto para crear reservas (prevenir scraping/spam)
 const postLimiter = rateLimit({
+  keyGenerator: porVisitante,
   windowMs: 60 * 1000, // 1 minuto
-  max: 5, // máximo 5 POST por minuto
+  max: 5, // por visitante real
   message: { error: 'Muchos intentos seguidos. Espera un minuto y vuelve a enviar tu reserva.' },
   skipSuccessfulRequests: false
 });
@@ -60,6 +75,7 @@ app.use('/api/reservas', (req, res, next) => {
 
 // El login es el blanco preferido de la fuerza bruta: límite propio y estrecho.
 const loginLimiter = rateLimit({
+  keyGenerator: porVisitante,
   windowMs: 15 * 60 * 1000,
   max: 10,                       // 10 intentos por IP cada 15 minutos
   message: { error: 'Demasiados intentos de acceso. Espera 15 minutos.' },
@@ -72,6 +88,7 @@ app.use('/api/auth/login', loginLimiter);
 // El agente llama a la API de Anthropic, que cuesta dinero por token:
 // un límite propio evita que alguien vacíe la cuenta a punta de mensajes.
 const chatLimiter = rateLimit({
+  keyGenerator: porVisitante,
   windowMs: 5 * 60 * 1000,
   max: 20,                         // 20 mensajes cada 5 minutos por IP
   message: { error: 'Muchos mensajes seguidos. Espera un momento.' },
