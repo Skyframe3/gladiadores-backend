@@ -40,7 +40,7 @@ app.use(cors({
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100, // máximo 100 requests por IP
-  message: 'Demasiadas solicitudes, intenta más tarde',
+  message: { error: 'Demasiadas solicitudes, intenta más tarde.' },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -50,7 +50,7 @@ app.use('/api/', limiter);
 const postLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
   max: 5, // máximo 5 POST por minuto
-  message: 'Límite de creación de reservas excedido',
+  message: { error: 'Muchos intentos seguidos. Espera un minuto y vuelve a enviar tu reserva.' },
   skipSuccessfulRequests: false
 });
 app.use('/api/reservas', (req, res, next) => {
