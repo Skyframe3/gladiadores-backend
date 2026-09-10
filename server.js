@@ -100,11 +100,14 @@ app.use('/api/chatbot/mensaje', chatLimiter);
 app.use(express.json({ limit: '100kb' }));
 
 // Conexión a MongoDB con connection pooling para Vercel serverless
-// NO bloquea el startup
+// NO bloquea el startup.
+// Esperar un minuto a que Mongo conteste no sirve de nada: para entonces el
+// visitante ya se fue. Mejor fallar en diez segundos — el frontend tiene
+// catálogo de respaldo y la siguiente petición vuelve a intentar la conexión.
 const mongoOptions = {
-  serverSelectionTimeoutMS: 60000,
-  socketTimeoutMS: 60000,
-  connectTimeoutMS: 30000,
+  serverSelectionTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 10000,
   maxPoolSize: 3,  // Vercel serverless = pocas conexiones concurrentes
   minPoolSize: 1
 };
