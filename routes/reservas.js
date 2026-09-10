@@ -176,7 +176,9 @@ router.get('/:folio', authMiddleware, adminMiddleware, async (req, res) => {
 // PATCH /api/reservas/:folio/pago — Registrar que llegó la transferencia.
 // Al aprobar, la reserva pasa a 'confirmada' y queda el rastro de quién
 // la aprobó: es el momento en que el lugar deja de ser tentativo.
-router.patch('/:folio/pago', authMiddleware, adminMiddleware, async (req, res) => {
+// Lo puede hacer el mostrador (staff), no solo el dueño: es quien recibe el
+// comprobante de la transferencia. Queda firmado en aprobadaPor.
+router.patch('/:folio/pago', authMiddleware, reservasMiddleware, async (req, res) => {
   try {
     const reserva = await Reserva.findOne({ folio: req.params.folio });
     if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });

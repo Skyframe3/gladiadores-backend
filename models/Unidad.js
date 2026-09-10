@@ -9,8 +9,8 @@ export const NOMBRE_CATEGORIA = {
   'cuatrimoto-2': 'Cuatrimoto',
   'commander-2': 'Maverick Trail',
   'commander-4': 'Commander Max',
-  'maverick-2': 'Maverick X3',
-  'maverick-4': 'Maverick X3 MAX'
+  'maverick-2': 'Maverick X3 RS',
+  'maverick-4': 'Maverick X3'
 };
 
 // Máquina física de la flota. Existe una sola vez y sirve para todas las rutas:
