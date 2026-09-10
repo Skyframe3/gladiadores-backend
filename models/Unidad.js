@@ -1,5 +1,18 @@
 import mongoose from 'mongoose';
 
+// Nombre comercial de cada categoría. ESTA es la única fuente: el nombre que
+// quedó copiado dentro de cada ruta (Ruta.units[].name) se ignora al servir,
+// porque si no habría que tocar diez documentos para renombrar una máquina.
+// El código interno (CMD2-01, tipo "commander") no cambia: las reservas ya
+// emitidas lo referencian y el índice de doble reserva depende de él.
+export const NOMBRE_CATEGORIA = {
+  'cuatrimoto-2': 'Cuatrimoto',
+  'commander-2': 'Maverick Trail',
+  'commander-4': 'Commander Max',
+  'maverick-2': 'Maverick X3',
+  'maverick-4': 'Maverick X3 MAX'
+};
+
 // Máquina física de la flota. Existe una sola vez y sirve para todas las rutas:
 // si se aparta el sábado a las 09:00, queda ocupada a esa hora sin importar en qué ruta se haya reservado.
 const unidadSchema = new mongoose.Schema({
@@ -18,19 +31,14 @@ unidadSchema.virtual('tipoId').get(function () {
   return `${this.tipo}-${this.plazas}`;
 });
 
-// Legible para admin y cliente. El Commander de 2 plazas es el trim Trail;
-// "Max" es exclusivo de la versión larga. Los dos Mavericks son X3.
+// Legible para admin y cliente: "Maverick X3 MAX · Máximo".
 unidadSchema.virtual('nombreCompleto').get(function () {
-  const tipos = {
-    cuatrimoto: 'Cuatrimoto',
-    maverick: 'Maverick X3',
-    commander: this.plazas <= 2 ? 'Commander Trail' : 'Commander Max'
-  };
-  return `${tipos[this.tipo] || this.tipo} · ${this.apodo}`;
+  return `${NOMBRE_CATEGORIA[this.tipoId] || this.tipo} · ${this.apodo}`;
 });
 
 unidadSchema.set('toJSON', { virtuals: true });
 unidadSchema.set('toObject', { virtuals: true });
+
 
 export const ETIQUETAS_TIPO = {
   cuatrimoto: 'Cuatrimoto',
@@ -40,10 +48,7 @@ export const ETIQUETAS_TIPO = {
 
 export const tipoIdLegible = (tipoId) => {
   const [tipo, plazas] = String(tipoId).split('-');
-  const n = Number(plazas);
-  let etiqueta = ETIQUETAS_TIPO[tipo] || tipo;
-  if (tipo === 'commander' && n <= 2) etiqueta = 'Commander Trail';
-  return `${etiqueta} · ${plazas} plazas`;
+  return `${NOMBRE_CATEGORIA[tipoId] || ETIQUETAS_TIPO[tipo] || tipo} · ${plazas} plazas`;
 };
 
 // FLOTA REAL según especificación del usuario.

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { NOMBRE_CATEGORIA } from './Unidad.js';
 
 // El precio es por vehículo completo y cambia según cuánta gente va:
 // un Commander con 2 personas no cuesta lo mismo que con 4.
@@ -76,7 +77,9 @@ rutaSchema.methods.toPublico = function () {
         .sort((a, b) => a.personas - b.personas);
       return {
         id: u.id,
-        name: u.name,
+        // El nombre sale del catálogo de unidades, no del que quedó guardado
+        // aquí: renombrar una máquina no debería obligar a editar cada ruta.
+        name: NOMBRE_CATEGORIA[u.id] || u.name,
         type: u.type,
         seats: u.seats,
         booked: u.booked,

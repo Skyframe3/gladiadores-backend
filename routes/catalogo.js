@@ -1,5 +1,6 @@
 import express from 'express';
 import Ruta from '../models/Ruta.js';
+import { NOMBRE_CATEGORIA } from '../models/Unidad.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -18,7 +19,14 @@ router.get('/', async (req, res) => {
 router.get('/admin', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const rutas = await Ruta.find().sort({ orden: 1, rid: 1 });
-    res.json({ ok: true, total: rutas.length, rutas });
+    // Mismo nombre que ve el cliente: el panel no debe llamarle distinto a la
+    // misma máquina solo porque el documento de la ruta traiga un nombre viejo.
+    const conNombreAlDia = rutas.map(r => {
+      const o = r.toObject();
+      o.units = (o.units || []).map(u => ({ ...u, name: NOMBRE_CATEGORIA[u.id] || u.name }));
+      return o;
+    });
+    res.json({ ok: true, total: rutas.length, rutas: conNombreAlDia });
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener el catálogo' });
   }
@@ -28,7 +36,7 @@ router.get('/admin', authMiddleware, adminMiddleware, async (req, res) => {
 const CAMPOS_EDITABLES = ['name', 'tag', 'desc', 'dur', 'dist', 'diff', 'activo', 'orden', 'terrain', 'img', 'diasActivos'];
 
 // Categorías de las que solo existe UNA máquina física en toda la flotilla
-// (ver models/Unidad.js: Minimi es el único Commander de 2 plazas, Don Mave
+// (ver models/Unidad.js: Minimi es el único Maverick Trail, Don Mave
 // el único Maverick de 2 plazas). Si el dueño la marca ocupada en una ruta,
 // físicamente no puede estar libre en ninguna otra: hay que apagarla en
 // todas a la vez o se podría vender dos veces la misma unidad.

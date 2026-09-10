@@ -29,7 +29,7 @@ dotenv.config();
 // Las 5 categorías comerciales. El id es el que ya usa la base.
 const CATEGORIAS = [
   { id: 'cuatrimoto-2', name: 'Cuatrimoto',      type: 'ATV 2 plazas', seats: 2 },
-  { id: 'commander-2',  name: 'Commander Trail', type: 'SSV 2 plazas', seats: 2 },
+  { id: 'commander-2',  name: 'Maverick Trail', type: 'SSV 2 plazas', seats: 2 },
   { id: 'commander-4',  name: 'Commander Max',   type: 'SSV 4 plazas', seats: 4 },
   { id: 'maverick-2',   name: 'Maverick X3',     type: 'SSV 2 plazas', seats: 2 },
   { id: 'maverick-4',   name: 'Maverick X3 MAX', type: 'SSV 4 plazas', seats: 4 }
