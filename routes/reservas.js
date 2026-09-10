@@ -238,4 +238,102 @@ router.patch('/:folio/estado', authMiddleware, reservasMiddleware, validateEstad
   }
 });
 
+// PATCH /api/reservas/:folio/reagendar — mover una reserva a otro día u hora.
+// Lo usa el mostrador cuando el cliente avisa que ya no puede venir. No se
+// crea una reserva nueva: se mueve la misma, con su folio y su pago, para no
+// perder el rastro de lo que ya transfirió.
+router.patch('/:folio/reagendar', authMiddleware, reservasMiddleware, async (req, res) => {
+  try {
+    const folio = String(req.params.folio).toUpperCase().trim();
+    if (!/^GOR-\d{4}$/.test(folio)) return res.status(400).json({ error: 'Folio inválido' });
+
+    const { fecha, horario, motivo } = req.body;
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return res.status(400).json({ error: 'Fecha inválida (usa AAAA-MM-DD)' });
+    }
+    if (!horario || !/^\d{1,2}:\d{2}$/.test(String(horario))) {
+      return res.status(400).json({ error: 'Horario inválido' });
+    }
+    // Mover una reserva al pasado solo genera confusión en el calendario.
+    const hoyUTC = new Date().toISOString().slice(0, 10);
+    if (fecha < hoyUTC) return res.status(400).json({ error: 'No se puede reagendar a una fecha que ya pasó' });
+
+    const reserva = await Reserva.findOne({ folio });
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (['cancelada', 'completada'].includes(reserva.estado)) {
+      return res.status(409).json({ error: `No se puede reagendar una reserva ${reserva.estado}` });
+    }
+
+    const fechaAnterior = reserva.fecha;
+    const horarioAnterior = reserva.horario;
+    if (fechaAnterior.toISOString().slice(0, 10) === fecha && horarioAnterior === horario) {
+      return res.status(400).json({ error: 'Esa es la misma fecha y hora que ya tenía' });
+    }
+
+    const rutaObj = await Ruta.findOne({ rid: reserva.rutaId, activo: true });
+    if (!rutaObj) return res.status(409).json({ error: 'Esa ruta ya no está activa' });
+    if (Array.isArray(rutaObj.diasActivos) && rutaObj.diasActivos.length && !rutaObj.diasActivos.includes(fecha)) {
+      return res.status(409).json({ error: 'Esa ruta no opera ese día. Actívalo primero en Catálogo.' });
+    }
+    const horariosOK = (rutaObj.horarios || []).filter(h => h.activo).map(h => h.hora);
+    if (horariosOK.length && !horariosOK.includes(horario)) {
+      return res.status(409).json({ error: `Esa ruta no sale a las ${horario} ese día` });
+    }
+
+    // Se vuelven a apartar máquinas físicas en la fecha nueva. Las de esta
+    // misma reserva no cuentan como ocupadas: si solo cambia la hora del
+    // mismo día, chocaría consigo misma.
+    const ocupadas = await unidadesOcupadasEnFecha(fecha, folio);
+    const yaAsignadas = new Set();
+    const renglones = reserva.unidades.map(u => ({
+      categoriaId: u.categoriaId, nombre: u.nombre, personas: u.personas, precio: u.precio, codigo: u.codigo
+    }));
+
+    for (const r of renglones) {
+      const [tipo, plazas] = String(r.categoriaId).split('-');
+      const libre = await Unidad.findOne({
+        tipo,
+        plazas: Number(plazas),
+        activo: true,
+        codigo: { $nin: [...Array.from(ocupadas), ...Array.from(yaAsignadas)] }
+      }).sort({ orden: 1 });
+      if (!libre) {
+        return res.status(409).json({ error: `Ese día ya no queda ${r.nombre.split(' · ')[0]} libre. Elige otra fecha.` });
+      }
+      r.codigo = libre.codigo;
+      r.nombre = libre.nombreCompleto;
+      yaAsignadas.add(libre.codigo);
+    }
+
+    reserva.unidades = renglones;
+    reserva.fecha = new Date(fecha + 'T00:00:00Z');
+    reserva.horario = horario;
+    reserva.historial.push({
+      fechaAnterior, horarioAnterior,
+      fechaNueva: reserva.fecha, horarioNuevo: horario,
+      motivo: String(motivo || '').slice(0, 200),
+      por: req.user.email
+    });
+
+    try {
+      await reserva.save();
+    } catch (dupErr) {
+      if (dupErr.code === 11000) {
+        return res.status(409).json({ error: 'Alguien apartó esas unidades hace un segundo. Intenta otra fecha.' });
+      }
+      throw dupErr;
+    }
+
+    res.json({
+      ok: true,
+      mensaje: `${folio} movida al ${fecha} a las ${horario}`,
+      reserva,
+      anterior: { fecha: fechaAnterior.toISOString().slice(0, 10), horario: horarioAnterior }
+    });
+  } catch (err) {
+    console.error('Error al reagendar:', err.message);
+    res.status(500).json({ error: 'Error al reagendar la reserva' });
+  }
+});
+
 export default router;

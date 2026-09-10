@@ -8,14 +8,19 @@ const router = express.Router();
 // Reservas de un día bloquean la máquina física completa ese día: dos
 // salidas distintas el mismo día ya la dejarían sucia/sin combustible
 // para la siguiente, así que no vale la pena distinguir por hora.
-export async function unidadesOcupadasEnFecha(fecha) {
+// `exceptoFolio` sirve al reagendar: al mover una reserva dentro del mismo
+// día, sus propias máquinas no deben contar como ocupadas o chocaría consigo
+// misma y diría que ya no hay unidades.
+export async function unidadesOcupadasEnFecha(fecha, exceptoFolio = null) {
   const inicio = new Date(fecha + 'T00:00:00Z');
   const fin = new Date(inicio.getTime() + 86400000);
   // 'pausada' también aparta: la reserva sigue viva, solo está en espera.
-  const reservas = await Reserva.find({
+  const filtro = {
     fecha: { $gte: inicio, $lt: fin },
     estado: { $in: ['pendiente', 'confirmada', 'pausada'] }
-  }).select('unidades.codigo');
+  };
+  if (exceptoFolio) filtro.folio = { $ne: exceptoFolio };
+  const reservas = await Reserva.find(filtro).select('unidades.codigo');
   const ocupadas = new Set();
   reservas.forEach(r => (r.unidades || []).forEach(u => u.codigo && ocupadas.add(u.codigo)));
   return ocupadas;

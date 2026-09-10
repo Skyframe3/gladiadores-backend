@@ -60,6 +60,19 @@ const reservaSchema = new mongoose.Schema({
   emailEnviado: { type: Boolean, default: false },
 
   creadaEn: { type: Date, default: Date.now },
+  // Cada vez que se mueve de día queda el rastro: quién la movió, cuándo, y
+  // de qué fecha venía. Si un cliente reclama "yo la había hecho para el 12",
+  // la respuesta está aquí y no en la memoria de quien atendió.
+  historial: [{
+    fechaAnterior: Date,
+    horarioAnterior: String,
+    fechaNueva: Date,
+    horarioNuevo: String,
+    motivo: { type: String, default: '' },
+    por: String,
+    en: { type: Date, default: Date.now }
+  }],
+
   actualizadaEn: { type: Date, default: Date.now }
 });
 
