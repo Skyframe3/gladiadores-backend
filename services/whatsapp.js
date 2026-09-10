@@ -13,18 +13,26 @@ export async function enviarConfirmacionReserva(reserva) {
 
   try {
     const fecha = new Date(reserva.fecha).toLocaleDateString('es-MX');
-    const anticipo = Math.round(reserva.montoTotal * 0.25);
-    const pago = reserva.modoPago === 'completo'
+    // El cliente eligió adelantar 25, 50 o el 100%: el mensaje tiene que
+    // decirle exactamente lo que él eligió, no un 25% fijo.
+    const pct = reserva.porcentajePago || (reserva.modoPago === 'completo' ? 100 : 25);
+    const aPagar = Math.round(reserva.montoTotal * pct / 100);
+    const resto = reserva.montoTotal - aPagar;
+    const pago = pct === 100
       ? `*Total a pagar:* $${reserva.montoTotal} MXN (pago completo)`
-      : `*Anticipo:* $${anticipo} MXN · *Resto en la ruta:* $${reserva.montoTotal - anticipo} MXN`;
+      : `*A transferir ahora (${pct}%):* $${aPagar} MXN · *Resto el día de la ruta:* $${resto} MXN`;
     const mensaje = `📋 *Solicitud de reserva recibida*
 
 *Folio:* ${reserva.folio}
 *Ruta:* ${reserva.ruta}
 *Fecha:* ${fecha}
 *Horario:* ${reserva.horario}
-*Unidades:* ${(reserva.unidades || []).map(u => `${u.nombre} (${u.personas}p)`).join(", ")}
+*Cliente:* ${reserva.cliente?.nombre || ''}
+*Correo:* ${reserva.cliente?.email || ''}
+*WhatsApp:* ${reserva.cliente?.whatsapp || ''}
+*Unidades:* ${(reserva.unidades || []).map(u => `${u.nombre} (${u.personas}p) $${u.precio}`).join(", ")}
 *Personas:* ${reserva.personas}
+*Total:* $${reserva.montoTotal} MXN
 ${pago}
 
 Tu lugar queda apartado en cuanto validemos tu transferencia.\n\n¡Te esperamos en Chignahuapan!

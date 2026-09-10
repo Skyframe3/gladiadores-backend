@@ -35,7 +35,12 @@ router.post('/', async (req, res, next) => {
 }, validateReserva, async (req, res) => {
   try {
 
-    const { nombre, email, whatsapp, ruta, rutaId, horario, fecha, extras, modoPago, nota } = req.body;
+    const { nombre, email, whatsapp, ruta, rutaId, horario, fecha, extras, modoPago, porcentajePago, nota } = req.body;
+    // 25, 50 o 100. Si viene el modoPago viejo sin porcentaje, "completo" es
+    // 100 y cualquier otra cosa el 25 de siempre.
+    const pct = [25, 50, 100].includes(Number(porcentajePago))
+      ? Number(porcentajePago)
+      : (modoPago === 'completo' ? 100 : 25);
     // unidades: [{categoriaId:'maverick-4', personas:4}, {categoriaId:'cuatrimoto-2', personas:2}, ...]
     const pedidas = Array.isArray(req.body.unidades) ? req.body.unidades : [];
 
@@ -107,7 +112,9 @@ router.post('/', async (req, res, next) => {
       nota: (nota || '').slice(0, 600),
       montoTotal,
       montoPagado: 0,
-      modoPago: modoPago || 'anticipo',
+      // El porcentaje manda; modoPago queda derivado de él.
+      porcentajePago: pct,
+      modoPago: pct === 100 ? 'completo' : 'anticipo',
       metodoPago: 'transferencia',
       estadoPago: 'pendiente',
       estado: 'pendiente'
@@ -131,13 +138,16 @@ router.post('/', async (req, res, next) => {
 
     setImmediate(() => enviarConfirmacionReserva(reserva));
 
-    const anticipo = Math.round(montoTotal * 0.25);
+    const montoAPagar = Math.round(montoTotal * pct / 100);
     res.status(201).json({
       ok: true,
       folio: reserva.folio,
       unidades: renglones.map(r => ({ nombre: r.nombre, personas: r.personas, precio: r.precio })),
       montoTotal,
-      anticipo,
+      porcentajePago: pct,
+      montoAPagar,
+      saldoDespues: montoTotal - montoAPagar,
+      anticipo: Math.round(montoTotal * 0.25),   // se conserva por compatibilidad
       modoPago: reserva.modoPago,
       estado: reserva.estado,
       mensaje: `Solicitud ${folio} recibida. Queda apartada mientras se valida tu transferencia.`

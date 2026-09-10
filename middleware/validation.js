@@ -14,7 +14,7 @@ const sanitizeString = (str) => {
 const CATEGORIAS_VALIDAS = ['cuatrimoto-2', 'commander-2', 'commander-4', 'maverick-2', 'maverick-4'];
 
 export const validateReserva = (req, res, next) => {
-  const { nombre, email, whatsapp, ruta, rutaId, unidades, horario, fecha, modoPago } = req.body;
+  const { nombre, email, whatsapp, ruta, rutaId, unidades, horario, fecha, modoPago, porcentajePago } = req.body;
 
   // Validar nombre (permitir solo letras, números, espacios, acentos, guiones)
   const nombreRegex = /^[a-záéíóúñ\s\-']{2,100}$/i;
@@ -81,6 +81,12 @@ export const validateReserva = (req, res, next) => {
   // Validar modoPago
   if (modoPago !== undefined && !['anticipo', 'completo'].includes(modoPago)) {
     return res.status(400).json({ error: 'modoPago: debe ser "anticipo" o "completo"' });
+  }
+
+  // El cliente elige adelantar 25, 50 o el 100%. Cualquier otro número sería
+  // alguien tocando la petición a mano para pagar menos de lo ofrecido.
+  if (porcentajePago !== undefined && ![25, 50, 100].includes(Number(porcentajePago))) {
+    return res.status(400).json({ error: 'porcentajePago: debe ser 25, 50 o 100' });
   }
 
   // El precio (monto y montoTotal) no se valida aquí: el servidor lo calcula

@@ -36,6 +36,11 @@ const reservaSchema = new mongoose.Schema({
   // atiende sepa de un vistazo cuánto falta por cobrar.
   montoTotal: { type: Number, required: true },
   montoPagado: { type: Number, default: 0 },
+  // Cuánto eligió adelantar el cliente: 25, 50 o el 100%. Se guarda el
+  // porcentaje y no una etiqueta porque el panel necesita el número exacto
+  // para saber cuánto esperar en la transferencia. modoPago se conserva
+  // derivado de él para lo que ya leía ese campo.
+  porcentajePago: { type: Number, enum: [25, 50, 100], default: 25 },
   modoPago: { type: String, enum: ['anticipo', 'completo'], default: 'anticipo' },
   metodoPago: { type: String, enum: ['transferencia', 'efectivo'], default: 'transferencia' },
   estadoPago: { type: String, enum: ['pendiente', 'anticipo', 'pagado'], default: 'pendiente' },
@@ -79,6 +84,11 @@ reservaSchema.pre('save', function (next) {
 });
 
 // Lo que le falta por pagar al cliente.
+// Lo que el cliente dijo que iba a transferir de entrada.
+reservaSchema.virtual('montoComprometido').get(function () {
+  return Math.round(this.montoTotal * (this.porcentajePago || 25) / 100);
+});
+
 reservaSchema.virtual('saldo').get(function () {
   return Math.max(0, (this.montoTotal || 0) - (this.montoPagado || 0));
 });
