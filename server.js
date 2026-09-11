@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import reservasRouter from './routes/reservas.js';
 import authRouter from './routes/auth.js';
 import webhooksRouter from './routes/webhooks.js';
@@ -41,12 +41,16 @@ app.use(cors({
 // bloquearía solo con unas cuantas visitas. Cloudflare pone la IP real en
 // cf-connecting-ip y la sobrescribe siempre, así que no se puede falsear.
 app.set('trust proxy', 1);
+// ipKeyGenerator agrupa las IPv6 por su bloque /64, que es lo que reparten
+// los proveedores. Sin él, cada visitante con IPv6 tiene billones de
+// direcciones a su nombre y el límite por IP no limita nada: la propia
+// librería lo avisa al arrancar (ERR_ERL_KEY_GEN_IPV6).
 const porVisitante = (req) => {
   const cf = req.headers['cf-connecting-ip'];
-  if (cf) return String(cf);
+  if (cf) return ipKeyGenerator(String(cf).trim());
   const xff = req.headers['x-forwarded-for'];
-  if (xff) return String(xff).split(',')[0].trim();
-  return req.ip || 'desconocido';
+  if (xff) return ipKeyGenerator(String(xff).split(',')[0].trim());
+  return ipKeyGenerator(req.ip || 'desconocido');
 };
 
 // Rate limiting: prevenir abuso
